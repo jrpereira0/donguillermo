@@ -86,6 +86,16 @@ Use em cards principais (login, resumos importantes), não em todo card da tela.
 | `.reveal` + `style={{ "--d": "300ms" }}` | Entrada escalonada (sobe e desfoca → nítido) |
 | `.shake` | Tremida do aviso de erro (já aplicada em `FormAlert tone="error"`) |
 | `OrnamentDivider` | Filete dourado com losango (`src/components/brand/ornament-divider.tsx`) |
+| `AuthHeading` | Cabeçalho padrão das telas de acesso: eyebrow dourado, título em degradê, filete e descrição (`src/components/auth/auth-heading.tsx`) |
+
+### Telas de acesso: receita padrão
+
+Todas as telas dentro de `(auth)` (login, esqueci a senha, definir senha, link inválido) seguem a mesma receita:
+
+1. Cabeçalho com `<AuthHeading eyebrow title description />`.
+2. Campos com `field-luxe` + ícone à esquerda (`Mail`, `LockKeyhole`), em blocos `reveal` com atrasos 650 / 760 / 880 ms.
+3. Botão principal `<Button variant="luxe" size="lg" className="w-full">` com `ArrowRight` que desliza (`group-hover/button:translate-x-1`). Para link com aparência de botão: `buttonVariants({ variant: "luxe", size: "lg" })`.
+4. Links secundários ("Esqueci minha senha", "Voltar ao login") com `label-caps link-luxe reveal self-center py-1`.
 
 ### Regras
 
