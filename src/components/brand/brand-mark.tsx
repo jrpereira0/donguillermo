@@ -18,7 +18,7 @@ export function BrandMark({
       <img
         src={brand.logoSquareSrc}
         alt={brand.name}
-        className="logo-intro h-[clamp(4.5rem,13vh,7rem)] w-auto"
+        className="logo-intro h-[clamp(4.5rem,11.5vh,7rem)] w-auto"
       />
     );
   }

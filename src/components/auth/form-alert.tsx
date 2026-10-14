@@ -1,3 +1,4 @@
+import { CircleAlert, CircleCheck, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -6,20 +7,23 @@ type Props = {
   className?: string;
 };
 
-/** Aviso de formulário. `error` usa role="alert" (leitores de tela anunciam na hora). */
+const ICONS = { error: CircleAlert, success: CircleCheck, info: Info } as const;
+
+/**
+ * Aviso de formulário no PADRÃO luxe (`.alert-luxe`): painel escuro simples com
+ * ícone de linha (lucide) na cor do tom. `error` usa role="alert" (leitores de tela
+ * anunciam na hora) e treme levemente ao aparecer.
+ */
 export function FormAlert({ tone, children, className }: Props) {
+  const Icon = ICONS[tone];
   return (
     <div
       role={tone === "error" ? "alert" : "status"}
-      className={cn(
-        "rounded-lg border px-3 py-2.5 text-sm",
-        tone === "error" && "shake border-destructive/50 bg-destructive/10 text-destructive",
-        tone === "success" && "border-success/50 bg-success/10 text-success",
-        tone === "info" && "border-border bg-surface-2 text-foreground",
-        className,
-      )}
+      data-tone={tone}
+      className={cn("alert-luxe", className)}
     >
-      {children}
+      <Icon className="alert-luxe__icon size-4" aria-hidden="true" />
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }

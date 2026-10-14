@@ -256,6 +256,16 @@ input:autofill {
     transform: scaleX(1);
   }
 }
+@keyframes luxe-alert-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 @keyframes luxe-shake {
   0%,
   100% {
@@ -450,6 +460,43 @@ input:autofill {
   .shake {
     animation: luxe-shake 0.45s ease;
   }
+
+  /*
+   * PADRÃO DE AVISO (`.alert-luxe`, via <FormAlert tone>): mesmo visual dos campos
+   * (`.field-luxe`): fundo escuro, borda fina, texto creme. Só o ícone de linha
+   * (lucide) e a borda levam a cor do tom (erro/sucesso/info).
+   */
+  .alert-luxe {
+    --tone: var(--brand-gold);
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+    padding: clamp(0.5rem, 1.5vh, 0.7rem) 0.85rem;
+    background: rgb(8 8 8 / 0.5);
+    color: var(--brand-cream);
+    font-size: 0.875rem;
+    line-height: 1.4;
+    animation: luxe-alert-in 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .alert-luxe[data-tone="error"] {
+    --tone: var(--brand-danger);
+    animation:
+      luxe-alert-in 0.4s cubic-bezier(0.2, 0.7, 0.2, 1),
+      luxe-shake 0.45s 0.1s ease;
+  }
+  .alert-luxe[data-tone="success"] {
+    --tone: var(--brand-success);
+  }
+  .alert-luxe[data-tone="info"] {
+    --tone: var(--brand-gold);
+  }
+  .alert-luxe__icon {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+    color: var(--tone);
+  }
   .skeleton-luxe {
     border-radius: 0.5rem;
     background: rgb(242 237 228 / 0.08);
@@ -501,6 +548,8 @@ input:autofill {
   .luxe-frame::before,
   .luxe-card::before,
   .skeleton-luxe,
+  .alert-luxe,
+  .alert-luxe[data-tone="error"],
   .shake {
     animation: none;
   }
@@ -513,5 +562,8 @@ input:autofill {
     animation: none;
   }
 }
+
+
+
 
 

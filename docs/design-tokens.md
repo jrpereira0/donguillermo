@@ -86,6 +86,7 @@ Use em cards principais (login, resumos importantes), não em todo card da tela.
 | `.reveal` + `style={{ "--d": "300ms" }}` | Entrada escalonada (sobe e desfoca → nítido) |
 | `.shake` | Tremida do aviso de erro (já aplicada em `FormAlert tone="error"`) |
 | `OrnamentDivider` | Filete dourado com losango (`src/components/brand/ornament-divider.tsx`) |
+| `.alert-luxe` (via `<FormAlert tone="error\|success\|info">`) | Aviso simples: fundo escuro, borda fina na cor do tom, texto creme e um ícone de linha (lucide). Sem emojis, sem selo colorido |
 | `AuthHeading` | Cabeçalho padrão das telas de acesso: eyebrow dourado, título em degradê, filete e descrição (`src/components/auth/auth-heading.tsx`) |
 
 ### Telas de acesso: receita padrão
