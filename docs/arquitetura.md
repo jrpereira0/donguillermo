@@ -35,7 +35,8 @@ flowchart TD
 | `src/lib/supabase/admin.ts` | Cliente `service_role`. `server-only`: o build falha se importado no navegador. |
 | `src/lib/supabase/proxy.ts` | Renova a sessão (cookies) a cada requisição. |
 | `src/proxy.ts` | Ponto de entrada do proxy do Next 16 (antigo `middleware`). |
-| `supabase/migrations/` | (Etapa 2) Migrations versionadas do banco. |
+| `supabase/migrations/` | Migrations versionadas do banco (padrão Supabase CLI). |
+| `scripts/` | Migração, seed e testes de RLS (ver [setup.md](setup.md)). |
 
 ## Três clientes Supabase, três níveis de confiança
 

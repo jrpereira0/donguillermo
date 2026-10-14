@@ -7,7 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "db:migrate": "node --env-file=.env.local scripts/db-migrate.mjs",
+    "db:bundle": "node scripts/db-bundle.mjs",
+    "db:seed": "node --env-file=.env.local scripts/seed-dev.mjs",
+    "test:rls": "node --env-file=.env.local scripts/test-rls.mjs",
+    "test:rls:offline": "node scripts/test-rls-offline.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -26,12 +31,14 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.9",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
+    "pg": "^8.23.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

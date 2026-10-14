@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# gerados localmente (contêm credenciais de teste / SQL consolidado)
+.dev-credentials.local.md
+supabase/_bundle.sql
