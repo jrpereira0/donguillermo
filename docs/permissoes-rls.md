@@ -40,4 +40,5 @@ flowchart TD
 | Teste | O que cobre | Precisa de |
 |---|---|---|
 | `npm run test:rls:offline` | Roda as migrations num Postgres embutido (PGlite) e confere 27 cenários: anônimo, recepção A e B, barbeiro, sem papel, admin, unidade desativada, escalada de privilégio, `is_active` | Nada (offline) |
+| `npm run test:access` | Autorização na aplicação: redirecionamentos e bloqueios por papel, unidade, unidade desativada e perfil inativo (41 cenários) | App rodando + `.env.local` |
 | `npm run test:rls` | Os mesmos cenários **no Supabase real**, com usuários temporários logados via anon key. Limpa tudo no fim | Migrations aplicadas + `.env.local` |

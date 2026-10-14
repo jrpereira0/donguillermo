@@ -1,0 +1,32 @@
+import type { Metadata } from "next";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireUnitArea } from "@/lib/auth/guards";
+
+export const metadata: Metadata = { title: "Minha agenda" };
+export const instant = false;
+
+export default async function MyAgendaPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const { unit } = await requireUnitArea(slug, "minha-agenda"); // só barbeiro (ou admin) desta unidade
+
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="text-3xl">Minha agenda</h1>
+      <Card>
+        <CardHeader>
+          <p className="label-caps">{unit.name}</p>
+          <CardTitle className="font-heading text-xl uppercase tracking-wide">
+            Área do barbeiro
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Em construção (área do barbeiro).
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

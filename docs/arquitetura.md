@@ -34,7 +34,8 @@ flowchart TD
 | `src/lib/supabase/server.ts` | Cliente de Server Components/Actions, com a sessão do usuário (RLS ativa). |
 | `src/lib/supabase/admin.ts` | Cliente `service_role`. `server-only`: o build falha se importado no navegador. |
 | `src/lib/supabase/proxy.ts` | Renova a sessão (cookies) a cada requisição. |
-| `src/proxy.ts` | Ponto de entrada do proxy do Next 16 (antigo `middleware`). |
+| `src/proxy.ts` | Proxy do Next 16 (antigo `middleware`): renova a sessão e redireciona (307) quem não tem sessão. |
+| `src/lib/auth/` | Papéis (`roles.ts`, regras puras), contexto de sessão e guardas de acesso. Ver [redirecionamento-por-papel.md](redirecionamento-por-papel.md). |
 | `supabase/migrations/` | Migrations versionadas do banco (padrão Supabase CLI). |
 | `scripts/` | Migração, seed e testes de RLS (ver [setup.md](setup.md)). |
 
@@ -54,7 +55,7 @@ Regra: o padrão é sempre `server.ts`. O `admin.ts` só é usado quando a opera
 - O projeto usa **Cache Components** (`cacheComponents: true`): leituras dinâmicas (cookies, fetch ao vivo) ficam dentro de `<Suspense>` e/ou após `await connection()`. Não se usa `export const dynamic`.
 - Antes de escrever código que dependa de APIs do Next, consultar `node_modules/next/dist/docs/` (ver `AGENTS.md`).
 
-## Fluxo previsto (etapas seguintes)
+## Fluxo de acesso (implementado nas Etapas 3 e 4)
 
 ```mermaid
 flowchart TD

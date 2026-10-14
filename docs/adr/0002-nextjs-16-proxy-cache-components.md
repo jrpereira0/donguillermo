@@ -18,3 +18,9 @@ O projeto foi gerado com Next.js 16, que tem mudanças em relação a versões a
 - Alinhado à direção do framework.
 - Páginas autenticadas precisam de fronteiras `<Suspense>` explícitas.
 - O plano menciona "middleware"; leia como "proxy".
+
+## Atualização (Etapa 4)
+
+- Páginas e layouts **protegidos** usam `export const instant = false` e fazem o `await` dos guardas direto (sem `<Suspense>`), para responder com **redirecionamento HTTP real** (307) em vez de transmitir HTML e redirecionar depois.
+- `createClient()` (servidor) chama `await connection()`: a sessão é sempre por requisição. Sem isso, o Next tenta pré-renderizar e acusa o `Date.now()` que o Supabase usa para validar a expiração do token.
+- Telas públicas (`/login`, `/esqueci-senha`) continuam com a leitura de sessão atrás de `<Suspense>`.

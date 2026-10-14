@@ -46,6 +46,8 @@ O `.env.local` está no `.gitignore`. Só o `.env.example` (sem valores) é vers
 | `npm run db:seed` | Cria o admin da rede e 3 usuários de teste (credenciais em `.dev-credentials.local.md`) |
 | `npm run test:rls:offline` | Testa a RLS num Postgres embutido (sem rede) |
 | `npm run test:rls` | Testa a RLS no Supabase real (usuários temporários) |
+| `npm test` | Testes unitários (Vitest) |
+| `npm run test:access` | Testa redirecionamento e acesso por papel (precisa do `npm run dev` rodando) |
 
 ## Banco de dados (Etapa 2)
 
