@@ -22,6 +22,10 @@
 2. Atualize o `.env.local`.
 3. Se foi commitada, trate como comprometida mesmo após remover do histórico.
 
+## Login
+
+Medidas de proteção do login e da recuperação de senha (limite de tentativas, mensagens genéricas, senha forte, anti open redirect) estão detalhadas em [autenticacao.md](autenticacao.md).
+
 ## Princípios que guiam as próximas etapas
 
 - Isolamento por unidade na **RLS**, não só na API.

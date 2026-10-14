@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { getPublicEnv } from "@/lib/env";
 
 /**
@@ -8,6 +9,9 @@ import { getPublicEnv } from "@/lib/env";
  */
 export async function createClient() {
   const env = getPublicEnv();
+  // Sessão é sempre por requisição. Sem isto, o Next tenta pré-renderizar e
+  // reclama do Date.now() usado pelo Supabase para validar a expiração do token.
+  await connection();
   const cookieStore = await cookies();
 
   return createServerClient(

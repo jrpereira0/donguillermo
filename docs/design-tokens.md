@@ -36,6 +36,14 @@ As fontes são carregadas por `next/font/google` em `src/app/layout.tsx` e ligad
 - `.label-caps`: rótulo pequeno, caixa alta, espaçamento largo, cor atenuada.
 - `.display-number`: valor grande em Oswald bold (ex.: `R$ 5.780`).
 
+## Componentes base
+
+Os componentes shadcn foram ajustados para a identidade (só por tokens):
+
+- **Button**: rótulo em Montserrat, caixa alta, espaçamento largo. `default` é dourado cheio; `outline` é contorno dourado sobre cartão (como "Atualizar meus dados" na referência). Altura 44 px (`lg`: 48 px).
+- **Input**: fundo `--brand-surface`, borda `--brand-border`, foco dourado, altura 44 px.
+- **Label**: estilo `.label-caps`.
+
 ## Como trocar a identidade
 
 1. **Cores**: edite o bloco `:root` em `src/app/globals.css`. Os tokens semânticos do shadcn (`--primary`, `--card`...) apontam para os `--brand-*`, então mudar a marca atualiza tudo.
