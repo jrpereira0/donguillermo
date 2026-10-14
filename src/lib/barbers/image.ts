@@ -19,37 +19,38 @@ function toBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
 }
 
 /** Tenta cada qualidade (da melhor para a pior) e devolve a primeira que cabe no peso-alvo. */
-async function smallestWithin(canvas: HTMLCanvasElement, type: string, qualities: number[]) {
+async function smallestWithin(canvas: HTMLCanvasElement, type: string, qualities: number[], targetBytes: number) {
   let last: Blob | null = null;
   for (const q of qualities) {
     const blob = await toBlob(canvas, type, q);
     if (!blob || blob.type !== type) return null; // navegador não gera esse formato
     last = blob;
-    if (blob.size <= PHOTO_TARGET_BYTES) break;
+    if (blob.size <= targetBytes) break;
   }
   return last;
 }
 
 /** Comprime o canvas em WebP (JPEG se o navegador não gerar WebP). */
-export async function encodePhoto(canvas: HTMLCanvasElement): Promise<Blob> {
-  const webp = await smallestWithin(canvas, "image/webp", WEBP_QUALITIES);
+export async function encodePhoto(canvas: HTMLCanvasElement, targetBytes = PHOTO_TARGET_BYTES): Promise<Blob> {
+  const webp = await smallestWithin(canvas, "image/webp", WEBP_QUALITIES, targetBytes);
   if (webp) return webp;
-  const jpeg = await smallestWithin(canvas, "image/jpeg", JPEG_QUALITIES);
+  const jpeg = await smallestWithin(canvas, "image/jpeg", JPEG_QUALITIES, targetBytes);
   if (!jpeg) throw new Error("encode");
   return jpeg;
 }
 
 /**
  * Recorta o quadrado visível (`sx`, `sy`, lado `side`, em pixels da imagem original)
- * e reduz para no máximo PHOTO_OUT_SIZE, sem ampliar fotos pequenas.
+ * e reduz para no máximo `outSize` (padrão PHOTO_OUT_SIZE), sem ampliar fotos pequenas.
  */
 export async function cropToBlob(
   img: CanvasImageSource,
   sx: number,
   sy: number,
   side: number,
+  options: { outSize?: number; targetBytes?: number } = {},
 ): Promise<Blob> {
-  const out = Math.max(1, Math.min(PHOTO_OUT_SIZE, Math.round(side)));
+  const out = Math.max(1, Math.min(options.outSize ?? PHOTO_OUT_SIZE, Math.round(side)));
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = out;
   const ctx = canvas.getContext("2d");
@@ -57,5 +58,5 @@ export async function cropToBlob(
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, sx, sy, side, side, 0, 0, out, out);
-  return encodePhoto(canvas);
+  return encodePhoto(canvas, options.targetBytes);
 }

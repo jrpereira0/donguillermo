@@ -15,6 +15,7 @@
 - **Dados pessoais**: foto, nome, sobrenome, apelido na agenda, **função**, nascimento, telefone; **endereço** com busca por CEP; CNPJ e redes sociais (opcionais).
 - **Acesso**: e-mail e senha (cadastro). Na edição: trocar senha e ativar/desativar.
 - **Horários**: um dia por vez (faixa Seg a Dom). Quatro horários: entrada, saída para o almoço, volta e saída; o intervalo é o almoço (opcional). "Folga" por dia e atalhos para copiar para todos os dias ou de segunda a sexta.
+- **Serviços**: marca os serviços que o profissional faz e ajusta a duração de cada um (padrão do serviço ou outra). Detalhes em [servicos.md](servicos.md).
 - **Comissões**: percentual sobre serviços e sobre produtos.
 
 Tudo é salvo por um único botão. A aba com erro ganha um ponto vermelho e abre sozinha.

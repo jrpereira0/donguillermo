@@ -11,6 +11,7 @@ import { requireUnitArea } from "@/lib/auth/guards";
 import { barberPhotoUrl } from "@/lib/barbers/photo";
 import { getBarber } from "@/lib/barbers/queries";
 import type { BarberRow } from "@/lib/barbers/types";
+import { getBarberServiceMinutes, listAssignableServices } from "@/lib/services/queries";
 import { formatCep, maskCnpj, maskPhone } from "@/lib/validation/barber";
 import { toggleBarberActiveAction } from "../actions";
 
@@ -26,7 +27,7 @@ function splitName(b: BarberRow): { first: string; last: string } {
   return { first, last: rest.join(" ") };
 }
 
-function toDefaults(b: BarberRow): BarberDefaults {
+function toDefaults(b: BarberRow, serviceMinutes: Record<string, string>): BarberDefaults {
   const social = (b.social && typeof b.social === "object" ? b.social : {}) as Record<string, unknown>;
   const s = (k: string) => (typeof social[k] === "string" ? (social[k] as string) : "");
   const { first, last } = splitName(b);
@@ -53,6 +54,7 @@ function toDefaults(b: BarberRow): BarberDefaults {
     workHours: b.work_hours,
     photoPath: b.photo_path ?? "",
     photoUrl: barberPhotoUrl(b.photo_path, b.updated_at),
+    serviceMinutes,
   };
 }
 
@@ -65,6 +67,10 @@ export default async function EditarProfissionalPage({
   const { unit } = await requireUnitArea(slug, "profissionais");
   const barber = await getBarber(unit.id, id);
   if (!barber) notFound();
+  const [services, serviceMinutes] = await Promise.all([
+    listAssignableServices(unit.id),
+    getBarberServiceMinutes(unit.id, barber.id),
+  ]);
 
   const editAccess = (
     <>
@@ -115,7 +121,8 @@ export default async function EditarProfissionalPage({
         slug={slug}
         unitId={unit.id}
         barberId={barber.id}
-        defaults={toDefaults(barber)}
+        defaults={toDefaults(barber, serviceMinutes)}
+        services={services}
         editAccess={editAccess}
       />
     </div>

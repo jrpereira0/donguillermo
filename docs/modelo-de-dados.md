@@ -88,5 +88,11 @@ Todas `SECURITY DEFINER`, `search_path` vazio, baseadas em `auth.uid()`. Não s�
 | `20261014000500_barber_personal_data.sql` | Nome/sobrenome e endereço (CEP) |
 | `20261014000600_barber_cnpj_phone.sql` | `cpf` vira `cnpj` (14 caracteres, aceita alfanumérico); telefone só com dígitos |
 | `20261014000700_barber_job_title.sql` | Função do profissional (`job_title`), informativa |
+| `20261014000800_services.sql` | Tabela `services` (preço em centavos, duração, categoria), RLS e privilégios por coluna |
+| `20261014000900_service_categories.sql` | Nova lista de categorias (tratamento vira química, outros vira cabelo) |
+| `20261014001000_service_categories_extra.sql` | Volta `tratamento` e `outros` à lista |
+| `20261014001100_service_images.sql` | `services.image_path`, bucket `service-images` e políticas do Storage |
+| `20261014001200_barber_services.sql` | Tabela de ligação profissional x serviço (mesma unidade garantida por chave composta) |
+| `20261014001300_barber_service_duration.sql` | Duração própria do profissional em cada serviço (`NULL` = padrão) |
 
 Os arquivos seguem o padrão da Supabase CLI (`supabase/migrations/AAAAMMDDHHMMSS_nome.sql`).

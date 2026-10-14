@@ -148,6 +148,107 @@ r = await q("insert into storage.objects (bucket_id, name) values ('barber-photo
 await as(recepA);
 r = await q("delete from storage.objects where name=$1", [photoA]); check("recepção A apaga a própria foto", r.n === 1 && !r.err, JSON.stringify(r));
 
+console.log("\n[serviços]");
+await db.exec("reset role");
+const sB = (await db.query("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'Barba B','barba',20,3000) returning id", [B])).rows[0].id;
+
+await as(recepA);
+r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'Corte','cabelo',30,4500) returning id", [A]);
+check("recepção A cria serviço na própria unidade", !r.err && r.rows.length === 1, r.err);
+const sA = r.rows[0]?.id;
+r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'Invasor','cabelo',30,100)", [B]); check("recepção A NÃO cria serviço na unidade B", !!r.err);
+r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'  CORTE ','cabelo',30,100)", [A]); check("nome repetido (sem diferenciar caixa/espaços) é rejeitado", !!r.err);
+r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'Corte','cabelo',30,100)", [B]); check("o mesmo nome pode existir em outra unidade (recepção A não escreve lá)", !!r.err);
+for (const [cat, ok] of [["quimica", true], ["tratamento", true], ["outros", true], ["massagem", true], ["hack", false]]) {
+  r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,$2,$3,30,100)", [A, "cat-" + cat, cat]);
+  check("categoria '" + cat + "' " + (ok ? "é aceita" : "é rejeitada"), ok ? !r.err : !!r.err, r.err);
+}
+r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'dur-4','cabelo',4,100)", [A]); check("duração abaixo de 5 min é rejeitada", !!r.err);
+r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'dur-481','cabelo',481,100)", [A]); check("duração acima de 480 min é rejeitada", !!r.err);
+r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'preco-neg','cabelo',30,-1)", [A]); check("preço negativo é rejeitado", !!r.err);
+r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'x','cabelo',30,100)", [A]); check("nome com 1 letra é rejeitado", !!r.err);
+r = await q("update services set price_cents=5000, duration_minutes=40 where id=$1", [sA]); check("recepção A edita serviço da própria unidade", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("update services set price_cents=1 where id=$1", [sB]); check("recepção A NÃO edita serviço da unidade B", r.n === 0 || !!r.err);
+r = await q("update services set unit_id=$1 where id=$2", [B, sA]); check("NÃO muda unit_id do serviço (sem privilégio de coluna)", !!r.err);
+r = await q("delete from services where id=$1", [sA]); check("NÃO exclui serviço (sem DELETE)", !!r.err || r.n === 0);
+r = await q("update services set image_path=$1 where id=$2", [`${B}/${sA}.webp`, sA]); check("imagem na pasta de outra unidade é rejeitada", !!r.err);
+r = await q("update services set image_path=$1 where id=$2", [`${A}/${sA}.webp`, sA]); check("imagem na pasta da própria unidade é aceita", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("select id from services where unit_id=$1", [A]); check("recepção A vê os serviços da unidade A", r.rows.some((x) => x.id === sA));
+r = await q("select id from services"); check("recepção A NÃO vê serviços da unidade B", !r.rows.some((x) => x.id === sB));
+r = await q("update services set is_active=false where id=$1", [sA]); check("recepção A desativa serviço", r.n === 1 && !r.err);
+await q("update services set is_active=true where id=$1", [sA]);
+
+console.log("\n[serviços: quem faz cada serviço (barber_services)]");
+await as(recepA);
+r = await q("insert into barber_services (barber_id, service_id, unit_id) values ($1,$2,$3)", [bA, sA, A]); check("recepção A liga barbeiro A ao serviço A", !r.err, r.err);
+r = await q("insert into barber_services (barber_id, service_id, unit_id) values ($1,$2,$3)", [bA, sA, A]); check("ligação repetida é rejeitada", !!r.err);
+r = await q("insert into barber_services (barber_id, service_id, unit_id) values ($1,$2,$3)", [bB, sA, A]); check("NÃO liga barbeiro de outra unidade (chave composta)", !!r.err);
+r = await q("insert into barber_services (barber_id, service_id, unit_id) values ($1,$2,$3)", [bA, sB, A]); check("NÃO liga serviço de outra unidade (chave composta)", !!r.err);
+r = await q("insert into barber_services (barber_id, service_id, unit_id) values ($1,$2,$3)", [bB, sB, B]); check("recepção A NÃO cria ligação na unidade B", !!r.err);
+r = await q("update barber_services set duration_minutes=45 where barber_id=$1 and service_id=$2", [bA, sA]); check("recepção A define duração própria do barbeiro", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("update barber_services set duration_minutes=4 where barber_id=$1 and service_id=$2", [bA, sA]); check("duração própria abaixo de 5 min é rejeitada", !!r.err);
+r = await q("update barber_services set duration_minutes=null where barber_id=$1 and service_id=$2", [bA, sA]); check("duração própria pode voltar ao padrão (null)", r.n === 1 && !r.err);
+r = await q("update barber_services set unit_id=$1 where barber_id=$2", [B, bA]); check("NÃO muda a unidade da ligação (sem privilégio de coluna)", !!r.err);
+r = await q("update barber_services set barber_id=$1 where barber_id=$2", [bB, bA]); check("NÃO troca o barbeiro da ligação (sem privilégio de coluna)", !!r.err);
+r = await q("select barber_id from barber_services"); check("recepção A vê a ligação da própria unidade", r.rows.length === 1);
+
+await as(barbA);
+r = await q("select barber_id from barber_services"); check("barbeiro A lê as ligações da própria unidade", r.rows.length === 1);
+r = await q("select id from services"); check("barbeiro A lê o catálogo da própria unidade", r.rows.some((x) => x.id === sA) && !r.rows.some((x) => x.id === sB));
+r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'Do barbeiro','cabelo',30,100)", [A]); check("barbeiro NÃO cria serviço", !!r.err);
+r = await q("update services set price_cents=1 where id=$1", [sA]); check("barbeiro NÃO edita serviço", r.n === 0 || !!r.err);
+r = await q("insert into barber_services (barber_id, service_id, unit_id) values ($1,$2,$3)", [bA, sA, A]); check("barbeiro NÃO cria ligação", !!r.err);
+r = await q("delete from barber_services where barber_id=$1", [bA]); check("barbeiro NÃO remove ligação", r.n === 0 || !!r.err);
+r = await q("update barber_services set duration_minutes=10 where barber_id=$1", [bA]); check("barbeiro NÃO altera duração da ligação", r.n === 0 || !!r.err);
+
+await as(recepB);
+r = await q("select id from services"); check("recepção B vê só os serviços da unidade B", r.rows.length === 1 && r.rows[0].id === sB, JSON.stringify(r.rows));
+r = await q("select barber_id from barber_services"); check("recepção B NÃO vê ligações da unidade A", r.rows.length === 0);
+r = await q("delete from barber_services where barber_id=$1", [bA]); check("recepção B NÃO remove ligação da unidade A", r.n === 0 || !!r.err);
+r = await q("update services set price_cents=1 where id=$1", [sA]); check("recepção B NÃO edita serviço da unidade A", r.n === 0 || !!r.err);
+
+await as(nobody);
+r = await q("select id from services"); check("usuário sem papel não vê serviços", r.rows.length === 0);
+r = await q("select barber_id from barber_services"); check("usuário sem papel não vê ligações", r.rows.length === 0);
+await as(null);
+r = await q("select id from services"); check("anônimo não lê serviços", !!r.err || r.rows.length === 0);
+r = await q("select barber_id from barber_services"); check("anônimo não lê ligações", !!r.err || r.rows.length === 0);
+
+await as(adm);
+r = await q("select id from services"); check("admin vê serviços das 2 unidades", r.rows.some((x) => x.id === sA) && r.rows.some((x) => x.id === sB));
+r = await q("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'Do admin','combo',60,9000)", [B]); check("admin cria serviço em qualquer unidade", !r.err, r.err);
+r = await q("insert into barber_services (barber_id, service_id, unit_id) values ($1,$2,$3)", [bB, sB, B]); check("admin liga barbeiro e serviço em qualquer unidade", !r.err, r.err);
+r = await q("delete from barber_services where barber_id=$1 and service_id=$2", [bB, sB]); check("admin remove ligação", r.n === 1 && !r.err);
+
+await as(recepA);
+r = await q("delete from barber_services where barber_id=$1 and service_id=$2", [bA, sA]); check("recepção A remove ligação da própria unidade", r.n === 1 && !r.err, JSON.stringify(r));
+
+await db.exec("reset role");
+await db.query("insert into barber_services (barber_id, service_id, unit_id) values ($1,$2,$3)", [bA, sA, A]);
+await db.query("delete from services where id=$1", [sA]);
+r = await q("select count(*)::int c from barber_services where service_id=$1", [sA]); check("apagar o serviço remove as ligações (cascade)", r.rows[0].c === 0);
+
+console.log("\n[imagens dos serviços (storage)]");
+await db.exec("reset role");
+r = await q("select public, file_size_limit, allowed_mime_types from storage.buckets where id='service-images'"); check("bucket service-images existe, público, 1 MB, só imagens", r.rows.length === 1 && r.rows[0].public === true && Number(r.rows[0].file_size_limit) === 1048576 && r.rows[0].allowed_mime_types.length === 3, JSON.stringify(r.rows));
+const sImg = (await db.query("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'Com imagem','cabelo',30,100) returning id", [A])).rows[0].id;
+const imgA = `${A}/${sImg}.webp`;
+await as(recepA);
+r = await q("insert into storage.objects (bucket_id, name) values ('service-images', $1)", [imgA]); check("recepção A envia imagem na pasta da unidade A", !r.err, r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('service-images', $1)", [`${B}/${sB}.webp`]); check("recepção A NÃO envia imagem na pasta da unidade B", !!r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('service-images', $1)", [`${A}/${sImg}.gif`]); check("extensão fora de webp/jpg/png é rejeitada", !!r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('service-images', $1)", [`${A}/../${B}/${sB}.webp`]); check("caminho com ../ é rejeitado", !!r.err);
+r = await q("select name from storage.objects where bucket_id='service-images'"); check("recepção A vê a própria imagem", r.rows.length === 1);
+await as(recepB);
+r = await q("select name from storage.objects where bucket_id='service-images'"); check("recepção B NÃO vê imagem da unidade A", r.rows.length === 0);
+r = await q("delete from storage.objects where name=$1", [imgA]); check("recepção B NÃO apaga imagem da unidade A", r.n === 0 || !!r.err);
+await as(barbA);
+r = await q("insert into storage.objects (bucket_id, name) values ('service-images', $1)", [`${A}/${sImg}.png`]); check("barbeiro NÃO envia imagem de serviço", !!r.err);
+await as(adm);
+r = await q("insert into storage.objects (bucket_id, name) values ('service-images', $1)", [`${B}/${sB}.jpg`]); check("admin envia imagem em qualquer unidade", !r.err, r.err);
+await as(recepA);
+r = await q("delete from storage.objects where name=$1", [imgA]); check("recepção A apaga a própria imagem", r.n === 1 && !r.err, JSON.stringify(r));
+
 console.log("\n[unidade B desativada]");
 await db.exec("reset role");
 await db.query("update units set is_active=false where id=$1", [B]);

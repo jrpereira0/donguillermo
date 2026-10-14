@@ -55,6 +55,11 @@ export default async function ProfissionaisPage({
         action={barbers.length ? newButton : undefined}
       />
 
+      {aviso === "parcial" ? (
+        <FlashNotice title="Profissional cadastrado">
+          Não foi possível vincular os serviços. Abra o profissional, vá em Serviços e salve de novo.
+        </FlashNotice>
+      ) : null}
       {aviso === "criado" ? (
         <FlashNotice title="Profissional cadastrado">O acesso dele ao sistema já está liberado.</FlashNotice>
       ) : null}

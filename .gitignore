@@ -47,3 +47,6 @@ supabase/_bundle.sql
 
 # log do servidor de dev rodando em segundo plano
 dev-server.log
+
+# capturas de tela dos testes ponta a ponta que falharam
+.e2e-artifacts/

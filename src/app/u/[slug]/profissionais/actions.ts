@@ -8,6 +8,7 @@ import { isValidPhotoPath } from "@/lib/barbers/photo";
 import { provisionBarber, setBarberLoginActive, setBarberPassword } from "@/lib/barbers/provision";
 import { PHOTO_BUCKET, type BarberFormState } from "@/lib/barbers/types";
 import { formatRetry, rateLimit } from "@/lib/rate-limit";
+import { selectionFrom, syncLinks } from "@/lib/services/links";
 import { createClient } from "@/lib/supabase/server";
 import { toFieldErrors } from "@/lib/validation/auth";
 import { lookupCep, type CepResult } from "@/lib/barbers/cep";
@@ -79,7 +80,8 @@ export async function createBarberAction(
 
   const id = str(formData, "id");
   const photoPath = str(formData, "photoPath");
-  if (!UUID.test(id) || (photoPath && !isValidPhotoPath(photoPath, unit.id, id))) {
+  const serviceSel = selectionFrom(formData, "serviceIds", "serviceMinutes_");
+  if (!UUID.test(id) || !serviceSel || (photoPath && !isValidPhotoPath(photoPath, unit.id, id))) {
     return { status: "error", message: GENERIC, values };
   }
 
@@ -138,8 +140,11 @@ export async function createBarberAction(
     };
   }
 
+  // Serviços que ele faz (sessão do usuário: a RLS confere a unidade). Falha não desfaz o cadastro.
+  const linked = await syncLinks(await createClient(), unit.id, "barber", id, serviceSel);
+
   revalidatePath(`/u/${unit.slug}/profissionais`);
-  redirect(`/u/${unit.slug}/profissionais?aviso=criado`);
+  redirect(`/u/${unit.slug}/profissionais?aviso=${linked ? "criado" : "parcial"}`);
 }
 
 /** Atualiza a ficha do profissional (unidade e login nunca mudam por aqui). */
@@ -156,7 +161,8 @@ export async function updateBarberAction(
   if (!UUID.test(barberId)) return { status: "error", message: GENERIC, values };
 
   const photoPath = str(formData, "photoPath");
-  if (photoPath && !isValidPhotoPath(photoPath, unit.id, barberId)) {
+  const serviceSel = selectionFrom(formData, "serviceIds", "serviceMinutes_");
+  if (!serviceSel || (photoPath && !isValidPhotoPath(photoPath, unit.id, barberId))) {
     return { status: "error", message: GENERIC, values };
   }
 
@@ -231,7 +237,16 @@ export async function updateBarberAction(
     if (rmError) console.error("[barbers] remove old photo:", rmError.message);
   }
 
+  const linked = await syncLinks(supabase, unit.id, "barber", barberId, serviceSel);
+
   revalidatePath(`/u/${unit.slug}/profissionais`);
+  if (!linked) {
+    return {
+      status: "error",
+      message: "Os dados foram salvos, mas não foi possível atualizar os serviços. Tente salvar de novo.",
+      values,
+    };
+  }
   return { status: "success", message: "Alterações salvas.", values };
 }
 

@@ -34,9 +34,11 @@ import {
 } from "@/app/u/[slug]/profissionais/actions";
 import { hoursFromValues } from "@/lib/barbers/form";
 import { initialBarberState } from "@/lib/barbers/types";
+import type { AssignableService } from "@/lib/services/types";
 import { emailProblem } from "@/lib/validation/auth";
 import { JOB_TITLES, cnpjProblem, maskCnpj, maskPhone, onlyDigits, phoneProblem } from "@/lib/validation/barber";
 import { Field, FormSection } from "./form-parts";
+import { BarberServicePicker } from "./barber-service-picker";
 import { PhotoUploader } from "./photo-uploader";
 import { TabList, type TabDef } from "./tab-list";
 
@@ -64,6 +66,8 @@ export type BarberDefaults = {
   workHours: unknown;
   photoPath: string;
   photoUrl: string | null;
+  /** Serviços que o profissional já faz -> duração própria em minutos ("" = padrão). */
+  serviceMinutes: Record<string, string>;
 };
 
 export const EMPTY_DEFAULTS: BarberDefaults = {
@@ -89,14 +93,16 @@ export const EMPTY_DEFAULTS: BarberDefaults = {
   workHours: null,
   photoPath: "",
   photoUrl: null,
+  serviceMinutes: {},
 };
 
-type TabId = "dados" | "acesso" | "horarios" | "comissoes";
+type TabId = "dados" | "acesso" | "horarios" | "servicos" | "comissoes";
 
 const TABS: TabDef<TabId>[] = [
   { id: "dados", label: "Dados pessoais", icon: UserRound },
   { id: "acesso", label: "Acesso", icon: KeyRound },
   { id: "horarios", label: "Horários", icon: Clock },
+  { id: "servicos", label: "Serviços", icon: Scissors },
   { id: "comissoes", label: "Comissões", icon: Percent },
 ];
 
@@ -113,6 +119,8 @@ type Props = {
   unitId: string;
   barberId: string;
   defaults: BarberDefaults;
+  /** Serviços ativos da unidade (para escolher o que o profissional faz). */
+  services: AssignableService[];
   mode: "create" | "edit";
   /** Edição: conteúdo da aba "Acesso" (senha e status), renderizado no servidor. */
   editAccess?: React.ReactNode;
@@ -148,13 +156,14 @@ function IconInput({ icon, ...props }: React.ComponentProps<typeof Input> & { ic
   );
 }
 
-export function BarberForm({ slug, unitId, barberId, defaults, mode, editAccess }: Props) {
+export function BarberForm({ slug, unitId, barberId, defaults, services, mode, editAccess }: Props) {
   const editing = mode === "edit";
   const [state, formAction, pending] = useActionState(
     editing ? updateBarberAction.bind(null, slug, barberId) : createBarberAction.bind(null, slug),
     initialBarberState,
   );
   const [uploading, setUploading] = useState(false);
+  const [serviceMinutes, setServiceMinutes] = useState(defaults.serviceMinutes);
   // Aviso de "salvo": fecha sozinho; guardamos qual resposta já foi fechada.
   const [closedNotice, setClosedNotice] = useState<unknown>(null);
   const [tab, setTab] = useState<TabId>("dados");
@@ -249,6 +258,12 @@ export function BarberForm({ slug, unitId, barberId, defaults, mode, editAccess 
 
       <form action={formAction} className="flex flex-col gap-5" noValidate>
         {!editing ? <input type="hidden" name="id" value={barberId} /> : null}
+        {Object.entries(serviceMinutes).map(([id, minutes]) => (
+          <span key={id} hidden>
+            <input type="hidden" name="serviceIds" value={id} />
+            <input type="hidden" name={`serviceMinutes_${id}`} value={minutes} />
+          </span>
+        ))}
 
         {state.status === "error" && state.message ? (
           <FormAlert key={state.message} tone="error">
@@ -440,6 +455,13 @@ export function BarberForm({ slug, unitId, barberId, defaults, mode, editAccess 
               closedLabel="Folga"
               withBreak
             />
+          </FormSection>
+        </div>
+
+        {/* ---------- Serviços ---------- */}
+        <div {...panel("servicos")}>
+          <FormSection icon={Scissors} title="Serviços que realiza" description="Marque os serviços e ajuste o tempo, se for diferente do padrão.">
+            <BarberServicePicker slug={slug} services={services} selected={serviceMinutes} onChange={setServiceMinutes} />
           </FormSection>
         </div>
 

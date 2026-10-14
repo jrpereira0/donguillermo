@@ -17,14 +17,21 @@ type Props = {
   onCancel: () => void;
   /** Recebe a foto já recortada e comprimida. */
   onConfirm: (blob: Blob) => void | Promise<void>;
+  /** Máscara do recorte: círculo (avatar) ou quadrado de cantos arredondados (imagens). */
+  shape?: "circle" | "rounded";
+  /** Lado e peso-alvo da imagem final (padrão: o da foto do profissional). */
+  outSize?: number;
+  targetBytes?: number;
+  /** Como chamar o arquivo na janela ("foto" ou "imagem"). */
+  noun?: string;
 };
 
 /**
  * Janela para posicionar a foto: arraste para mover, use o controle (ou +/-) para ampliar.
- * A área redonda mostra exatamente o que vai aparecer no avatar. A imagem nunca deixa
+ * A máscara mostra exatamente o que vai aparecer no avatar (ou na miniatura). A imagem nunca deixa
  * "buracos": o recorte sempre fica dentro da foto.
  */
-export function PhotoCropper({ source, onCancel, onConfirm }: Props) {
+export function PhotoCropper({ source, onCancel, onConfirm, shape = "circle", outSize, targetBytes, noun = "foto" }: Props) {
   // Cabe em telas estreitas (janela = 92% da tela, menos o respiro interno). Este componente só monta no cliente.
   const [VIEW] = useState(() => Math.max(200, Math.min(VIEW_MAX, Math.floor(window.innerWidth * 0.92) - 48)));
   const dialog = useRef<HTMLDialogElement>(null);
@@ -81,7 +88,7 @@ export function PhotoCropper({ source, onCancel, onConfirm }: Props) {
     setBusy(true);
     try {
       const side = VIEW / scale;
-      await onConfirm(await cropToBlob(img.el, center.x - side / 2, center.y - side / 2, side));
+      await onConfirm(await cropToBlob(img.el, center.x - side / 2, center.y - side / 2, side, { outSize, targetBytes }));
     } finally {
       setBusy(false);
     }
@@ -104,7 +111,7 @@ export function PhotoCropper({ source, onCancel, onConfirm }: Props) {
         <div className="flex w-full items-start justify-between gap-3">
           <div>
             <h2 id="cropper-title" className="font-heading text-xl font-semibold">
-              Ajustar foto
+              Ajustar {noun}
             </h2>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
               <Move className="size-3.5 text-gold" aria-hidden="true" />
@@ -119,7 +126,7 @@ export function PhotoCropper({ source, onCancel, onConfirm }: Props) {
         <div
           role="group"
           tabIndex={0}
-          aria-label="Área de ajuste da foto. Use as setas para mover e + ou - para ampliar."
+          aria-label={`Área de ajuste da ${noun}. Use as setas para mover e + ou - para ampliar.`}
           className="relative touch-none overflow-hidden rounded-lg bg-[#0b0b0b] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           style={{ width: VIEW, height: VIEW, cursor: img ? "grab" : "default" }}
           onPointerDown={(e) => {
@@ -167,7 +174,7 @@ export function PhotoCropper({ source, onCancel, onConfirm }: Props) {
           {/* Máscara: escurece fora do círculo, que é o recorte final. */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 rounded-full border border-gold/70"
+            className={`pointer-events-none absolute inset-0 border border-gold/70 ${shape === "circle" ? "rounded-full" : "rounded-2xl"}`}
             style={{ boxShadow: "0 0 0 999px rgb(0 0 0 / 0.6)" }}
           />
         </div>
@@ -194,7 +201,7 @@ export function PhotoCropper({ source, onCancel, onConfirm }: Props) {
           </Button>
           <Button type="button" variant="luxe" onClick={confirm} disabled={!img || busy}>
             {busy ? <Loader2 className="animate-spin" /> : <Check />}
-            {busy ? "Enviando" : "Usar foto"}
+            {busy ? "Enviando" : `Usar ${noun}`}
           </Button>
         </div>
       </div>

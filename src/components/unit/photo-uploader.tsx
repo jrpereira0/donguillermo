@@ -13,8 +13,22 @@ const MAX_INPUT_BYTES = 12 * 1024 * 1024; // arquivo original (será recortado e
 
 type Props = {
   unitId: string;
+  /** Dono da imagem (barbeiro ou serviço): vira o nome do arquivo `<unidade>/<id>.<ext>`. */
   barberId: string;
-  name: string;
+  /** Usado só pelo avatar padrão (iniciais). */
+  name?: string;
+  /** Bucket do Storage (padrão: fotos dos profissionais). */
+  bucket?: string;
+  /** Nome do campo oculto que leva o caminho ao formulário. */
+  fieldName?: string;
+  /** "foto" (padrão) ou "imagem": ajusta os textos. */
+  noun?: "foto" | "imagem";
+  /** Máscara do recorte e tamanho/peso da imagem final. */
+  shape?: "circle" | "rounded";
+  outSize?: number;
+  targetBytes?: number;
+  /** Pré-visualização própria (padrão: avatar com iniciais). */
+  renderPreview?: (url: string | null) => React.ReactNode;
   /** Caminho já salvo no bucket (ou ""). */
   initialPath: string;
   /** URL pública atual para a pré-visualização (ou null). */
@@ -30,7 +44,21 @@ type Props = {
  * só deixa a recepção da unidade gravar na pasta da unidade). O caminho vai no campo
  * oculto `photoPath`, que a action valida e salva.
  */
-export function PhotoUploader({ unitId, barberId, name, initialPath, initialUrl, onBusyChange }: Props) {
+export function PhotoUploader({
+  unitId,
+  barberId,
+  name = "?",
+  bucket = PHOTO_BUCKET,
+  fieldName = "photoPath",
+  noun = "foto",
+  shape = "circle",
+  outSize,
+  targetBytes,
+  renderPreview,
+  initialPath,
+  initialUrl,
+  onBusyChange,
+}: Props) {
   const input = useRef<HTMLInputElement>(null);
   const [path, setPath] = useState(initialPath);
   const [preview, setPreview] = useState<string | null>(initialUrl);
@@ -67,7 +95,7 @@ export function PhotoUploader({ unitId, barberId, name, initialPath, initialUrl,
       if (!res.ok) throw new Error("fetch");
       setEditing(await res.blob());
     } catch {
-      setError("Não foi possível abrir a foto atual. Escolha o arquivo de novo.");
+      setError(`Não foi possível abrir a ${noun} atual. Escolha o arquivo de novo.`);
     } finally {
       setBusyBoth(false);
     }
@@ -80,10 +108,10 @@ export function PhotoUploader({ unitId, barberId, name, initialPath, initialUrl,
     setBusyBoth(true);
     try {
       const { error: upError } = await supabase.storage
-        .from(PHOTO_BUCKET)
+        .from(bucket)
         .upload(newPath, blob, { upsert: true, contentType: blob.type, cacheControl: "3600" });
       if (upError) {
-        setError("Não foi possível enviar a foto. Tente novamente.");
+        setError(`Não foi possível enviar a ${noun}. Tente novamente.`);
         setEditing(null);
         return;
       }
@@ -93,7 +121,7 @@ export function PhotoUploader({ unitId, barberId, name, initialPath, initialUrl,
       setSource(editing);
       setEditing(null);
     } catch {
-      setError("Não foi possível enviar a foto. Tente novamente.");
+      setError(`Não foi possível enviar a ${noun}. Tente novamente.`);
       setEditing(null);
     } finally {
       setBusyBoth(false);
@@ -102,8 +130,8 @@ export function PhotoUploader({ unitId, barberId, name, initialPath, initialUrl,
 
   return (
     <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-      <input type="hidden" name="photoPath" value={path} />
-      <BarberAvatar name={name || "?"} url={preview} className="size-24 text-3xl" />
+      <input type="hidden" name={fieldName} value={path} />
+      {renderPreview ? renderPreview(preview) : <BarberAvatar name={name || "?"} url={preview} className="size-24 text-3xl" />}
       <div className="flex flex-col items-start gap-2">
         <input
           ref={input}
@@ -111,13 +139,13 @@ export function PhotoUploader({ unitId, barberId, name, initialPath, initialUrl,
           accept="image/jpeg,image/png,image/webp"
           className="sr-only"
           onChange={onPick}
-          aria-label="Escolher foto"
+          aria-label={`Escolher ${noun}`}
           tabIndex={-1}
         />
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => input.current?.click()}>
             {busy ? <Loader2 className="animate-spin" /> : <Camera />}
-            {busy ? "Enviando…" : path ? "Trocar foto" : "Escolher foto"}
+            {busy ? "Enviando…" : path ? `Trocar ${noun}` : `Escolher ${noun}`}
           </Button>
           {path ? (
             <>
@@ -143,13 +171,21 @@ export function PhotoUploader({ unitId, barberId, name, initialPath, initialUrl,
           ) : null}
         </div>
         <p className="text-xs text-muted-foreground">
-          JPG, PNG ou WebP. Você ajusta o enquadramento e a foto é comprimida automaticamente.
+          JPG, PNG ou WebP. Você ajusta o enquadramento e a {noun} é comprimida automaticamente.
         </p>
         <FieldError id="photo-error" message={error} />
       </div>
 
       {editing ? (
-        <PhotoCropper source={editing} onCancel={() => setEditing(null)} onConfirm={upload} />
+        <PhotoCropper
+          source={editing}
+          onCancel={() => setEditing(null)}
+          onConfirm={upload}
+          shape={shape}
+          outSize={outSize}
+          targetBytes={targetBytes}
+          noun={noun}
+        />
       ) : null}
     </div>
   );

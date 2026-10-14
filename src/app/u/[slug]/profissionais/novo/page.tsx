@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { BarberForm, EMPTY_DEFAULTS } from "@/components/unit/barber-form";
 import { PageHeader } from "@/components/unit/page-header";
 import { requireUnitArea } from "@/lib/auth/guards";
+import { listAssignableServices } from "@/lib/services/queries";
 
 export const metadata: Metadata = { title: "Novo profissional" };
 export const instant = false;
@@ -15,6 +16,7 @@ export default async function NovoProfissionalPage({
 }) {
   const { slug } = await params;
   const { unit } = await requireUnitArea(slug, "profissionais");
+  const services = await listAssignableServices(unit.id);
 
   return (
     <div className="flex flex-col gap-8">
@@ -36,6 +38,7 @@ export default async function NovoProfissionalPage({
         unitId={unit.id}
         barberId={crypto.randomUUID()}
         defaults={EMPTY_DEFAULTS}
+        services={services}
       />
     </div>
   );

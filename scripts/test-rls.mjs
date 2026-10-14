@@ -28,7 +28,7 @@ async function login(email, password) {
   return c;
 }
 
-const created = { users: [], units: [], photos: [] };
+const created = { users: [], units: [], photos: [], images: [] };
 
 try {
   // ---- Preparação (service_role) ----
@@ -259,6 +259,128 @@ try {
     check("anônimo não lê barbeiros", !anon.data?.length);
   }
 
+  // ---- 7b) Serviços, imagens e quem faz cada serviço ----
+  console.log("\n[serviços, imagens e ligações]");
+  {
+    const mk = async (table, row) => {
+      const { data, error } = await admin.from(table).insert(row).select().single();
+      if (error) throw error;
+      return data;
+    };
+    const bA = await mk("barbers", { unit_id: unitA.id, full_name: "Serv Barbeiro A", display_name: "ServA" });
+    const bB = await mk("barbers", { unit_id: unitB.id, full_name: "Serv Barbeiro B", display_name: "ServB" });
+    const sB = await mk("services", { unit_id: unitB.id, name: "Barba B " + tag, category: "barba", duration_minutes: 20, price_cents: 3000 });
+
+    const rA = await login(people.recepA.email, people.recepA.password);
+    const ins = await rA.from("services").insert({ unit_id: unitA.id, name: "Corte " + tag, category: "cabelo", duration_minutes: 30, price_cents: 4500 }).select().single();
+    check("recepção A cria serviço na unidade A", !ins.error, ins.error?.message);
+    const sA = ins.data;
+    const other = await rA.from("services").insert({ unit_id: unitB.id, name: "Invasor " + tag, category: "cabelo", duration_minutes: 30, price_cents: 100 });
+    check("recepção A NÃO cria serviço na unidade B", !!other.error);
+    const dup = await rA.from("services").insert({ unit_id: unitA.id, name: " CORTE " + tag, category: "cabelo", duration_minutes: 30, price_cents: 100 });
+    check("nome repetido na unidade é rejeitado", !!dup.error);
+    const cat = await rA.from("services").insert({ unit_id: unitA.id, name: "Cat " + tag, category: "hack", duration_minutes: 30, price_cents: 100 });
+    check("categoria inválida é rejeitada", !!cat.error);
+    const dur = await rA.from("services").insert({ unit_id: unitA.id, name: "Dur " + tag, category: "cabelo", duration_minutes: 4, price_cents: 100 });
+    check("duração fora do limite é rejeitada", !!dur.error);
+    const upd = await rA.from("services").update({ price_cents: 5000, category: "combo" }).eq("id", sA.id).select();
+    check("recepção A edita serviço da própria unidade", upd.data?.length === 1);
+    const updB = await rA.from("services").update({ price_cents: 1 }).eq("id", sB.id).select();
+    check("recepção A NÃO edita serviço da unidade B", !updB.data?.length);
+    const move = await rA.from("services").update({ unit_id: unitB.id }).eq("id", sA.id);
+    check("NÃO troca a unidade do serviço", !!move.error);
+    const del = await rA.from("services").delete().eq("id", sA.id).select();
+    check("NÃO exclui serviço", !!del.error || !del.data?.length);
+    const seen = await rA.from("services").select("id");
+    check("recepção A vê o serviço A e NÃO vê o da unidade B", ids(seen.data).includes(sA.id) && !ids(seen.data).includes(sB.id));
+
+    // Imagem do serviço (bucket service-images)
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const imgA = `${unitA.id}/${sA.id}.png`;
+    const imgB = `${unitB.id}/${sB.id}.png`;
+    created.images.push(imgA, imgB);
+    const bucket = (c) => c.storage.from("service-images");
+    const up = await bucket(rA).upload(imgA, png, { contentType: "image/png", upsert: true });
+    check("recepção A envia imagem para a pasta da unidade A", !up.error, up.error?.message);
+    const upOther = await bucket(rA).upload(imgB, png, { contentType: "image/png", upsert: true });
+    check("recepção A NÃO envia imagem para a pasta da unidade B", !!upOther.error);
+    const upMime = await bucket(rA).upload(`${unitA.id}/${sA.id}.jpg`, Buffer.from("texto"), { contentType: "text/plain" });
+    check("tipo de arquivo fora de imagem é rejeitado", !!upMime.error);
+    const upBig = await bucket(rA).upload(`${unitA.id}/${sA.id}.webp`, Buffer.alloc(1_100_000, 1), { contentType: "image/webp" });
+    check("imagem acima de 1 MB é rejeitada", !!upBig.error);
+    const saved = await rA.from("services").update({ image_path: imgA }).eq("id", sA.id).select();
+    check("recepção A salva o caminho da imagem", saved.data?.length === 1);
+    const wrong = await rA.from("services").update({ image_path: imgB }).eq("id", sA.id);
+    check("NÃO aponta a imagem para a pasta de outra unidade", !!wrong.error);
+    const pub = bucket(anonClient()).getPublicUrl(imgA).data.publicUrl;
+    const res = await fetch(pub);
+    check("imagem abre por URL pública, sem login", res.status === 200, `status ${res.status}`);
+
+    // Ligações barbeiro x serviço
+    const link = await rA.from("barber_services").insert({ barber_id: bA.id, service_id: sA.id, unit_id: unitA.id });
+    check("recepção A liga barbeiro e serviço da unidade A", !link.error, link.error?.message);
+    const crossBarber = await rA.from("barber_services").insert({ barber_id: bB.id, service_id: sA.id, unit_id: unitA.id });
+    check("NÃO liga barbeiro de outra unidade", !!crossBarber.error);
+    const crossService = await rA.from("barber_services").insert({ barber_id: bA.id, service_id: sB.id, unit_id: unitA.id });
+    check("NÃO liga serviço de outra unidade", !!crossService.error);
+    const crossUnit = await rA.from("barber_services").insert({ barber_id: bB.id, service_id: sB.id, unit_id: unitB.id });
+    check("recepção A NÃO cria ligação na unidade B", !!crossUnit.error);
+    const own = await rA.from("barber_services").update({ duration_minutes: 45 }).eq("barber_id", bA.id).eq("service_id", sA.id).select();
+    check("recepção A define a duração própria do barbeiro", own.data?.length === 1 && own.data[0].duration_minutes === 45);
+    const badOwn = await rA.from("barber_services").update({ duration_minutes: 4 }).eq("barber_id", bA.id).eq("service_id", sA.id);
+    check("duração própria fora do limite é rejeitada", !!badOwn.error);
+    const swap = await rA.from("barber_services").update({ barber_id: bB.id }).eq("barber_id", bA.id);
+    check("NÃO troca o barbeiro da ligação", !!swap.error);
+    const mine = await rA.from("barber_services").select("barber_id");
+    check("recepção A vê a ligação da própria unidade", (mine.data ?? []).length === 1);
+
+    const bc = await login(people.barbA.email, people.barbA.password);
+    const bl = await bc.from("barber_services").select("barber_id");
+    check("barbeiro lê as ligações da própria unidade", (bl.data ?? []).length === 1);
+    const bs = await bc.from("services").select("id");
+    check("barbeiro lê o catálogo da própria unidade", ids(bs.data).includes(sA.id) && !ids(bs.data).includes(sB.id));
+    const bIns = await bc.from("services").insert({ unit_id: unitA.id, name: "Do barbeiro " + tag, category: "cabelo", duration_minutes: 30, price_cents: 100 });
+    check("barbeiro NÃO cria serviço", !!bIns.error);
+    const bUpd = await bc.from("services").update({ price_cents: 1 }).eq("id", sA.id).select();
+    check("barbeiro NÃO edita serviço", !bUpd.data?.length);
+    const bLink = await bc.from("barber_services").insert({ barber_id: bA.id, service_id: sA.id, unit_id: unitA.id });
+    check("barbeiro NÃO cria ligação", !!bLink.error);
+    const bDel = await bc.from("barber_services").delete().eq("barber_id", bA.id).select();
+    check("barbeiro NÃO remove ligação", !bDel.data?.length);
+    const bImg = await bucket(bc).upload(`${unitA.id}/${sA.id}.png`, png, { contentType: "image/png", upsert: true });
+    check("barbeiro NÃO envia imagem de serviço", !!bImg.error);
+
+    const rB = await login(people.recepB.email, people.recepB.password);
+    const sv = await rB.from("services").select("id");
+    check("recepção B NÃO vê serviço da unidade A", !ids(sv.data).includes(sA.id));
+    const lk = await rB.from("barber_services").select("barber_id");
+    check("recepção B NÃO vê ligações da unidade A", !(lk.data ?? []).length);
+    const lkDel = await rB.from("barber_services").delete().eq("barber_id", bA.id).select();
+    check("recepção B NÃO remove ligação da unidade A", !lkDel.data?.length);
+    const rm = await bucket(rB).remove([imgA]);
+    const still = await fetch(pub);
+    check("recepção B NÃO apaga imagem da unidade A", still.status === 200 && !(rm.data ?? []).length);
+
+    const adm = await login(people.admin.email, people.admin.password);
+    const as2 = await adm.from("services").select("id");
+    check("admin vê serviços das duas unidades", ids(as2.data).includes(sA.id) && ids(as2.data).includes(sB.id));
+    const admIns = await adm.from("services").insert({ unit_id: unitB.id, name: "Do admin " + tag, category: "massagem", duration_minutes: 60, price_cents: 9000 });
+    check("admin cria serviço em qualquer unidade", !admIns.error, admIns.error?.message);
+    const admImg = await bucket(adm).upload(imgB, png, { contentType: "image/png", upsert: true });
+    check("admin envia imagem em qualquer unidade", !admImg.error, admImg.error?.message);
+
+    const sem = await login(people.semPapel.email, people.semPapel.password);
+    const none = await sem.from("services").select("id");
+    const noneL = await sem.from("barber_services").select("barber_id");
+    check("usuário sem papel não vê serviços nem ligações", !none.data?.length && !noneL.data?.length);
+    const anonS = await anonClient().from("services").select("id");
+    const anonL = await anonClient().from("barber_services").select("barber_id");
+    check("anônimo não lê serviços nem ligações", !anonS.data?.length && !anonL.data?.length);
+  }
+
   // ---- 8) Unidade desativada ----
   console.log("\n[unidade B desativada]");
   {
@@ -276,6 +398,7 @@ try {
 } finally {
   // ---- Limpeza ----
   if (created.photos.length) await admin.storage.from("barber-photos").remove(created.photos).catch(() => {});
+  if (created.images.length) await admin.storage.from("service-images").remove(created.images).catch(() => {});
   for (const id of created.users) await admin.auth.admin.deleteUser(id).catch(() => {});
   for (const id of created.units) await admin.from("units").delete().eq("id", id);
   console.log(`\n${total - failures}/${total} verificações passaram.`);
