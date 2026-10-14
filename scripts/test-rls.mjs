@@ -28,7 +28,7 @@ async function login(email, password) {
   return c;
 }
 
-const created = { users: [], units: [], photos: [], images: [] };
+const created = { users: [], units: [], photos: [], images: [], customers: [], customerPhotos: [] };
 
 try {
   // ---- Preparação (service_role) ----
@@ -381,6 +381,200 @@ try {
     check("anônimo não lê serviços nem ligações", !anonS.data?.length && !anonL.data?.length);
   }
 
+  // ---- 7) Clientes (cadastro único da rede) e observações ----
+  console.log("\n[clientes e observações]");
+  {
+    const rA = await login(people.recepA.email, people.recepA.password);
+    const rB = await login(people.recepB.email, people.recepB.password);
+    const bc = await login(people.barbA.email, people.barbA.password);
+    const adm = await login(people.admin.email, people.admin.password);
+    const sem = await login(people.semPapel.email, people.semPapel.password);
+    const anon = anonClient();
+    const uuid = () => crypto.randomUUID();
+    // CPF válido e diferente a cada execução (o CPF é único na rede inteira)
+    const cpfOf = () => {
+      const d = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));
+      for (const len of [9, 10]) {
+        let sum = 0;
+        for (let i = 0; i < len; i++) sum += d[i] * (len + 1 - i);
+        const r = (sum * 10) % 11;
+        d.push(r === 10 ? 0 : r);
+      }
+      return d.join("");
+    };
+    const cpf = cpfOf();
+
+    const idA = uuid();
+    const insA = await rA.from("customers").insert({ id: idA, created_unit_id: unitA.id, full_name: "Cliente Teste RLS " + tag, phone: "11912345678", cpf });
+    if (!insA.error) created.customers.push(idA);
+    check("recepção A cadastra cliente com origem na unidade A", !insA.error, insA.error?.message);
+
+    const rows = await rA.from("customers").select("id, registered_via, created_unit_id").eq("id", idA);
+    check("cliente nasce como 'recepcao' e com a unidade de origem", rows.data?.[0]?.registered_via === "recepcao" && rows.data?.[0]?.created_unit_id === unitA.id, JSON.stringify(rows.data));
+
+    const idX = uuid();
+    const insB = await rA.from("customers").insert({ id: idX, created_unit_id: unitB.id, full_name: "Origem Errada " + tag });
+    if (!insB.error) created.customers.push(idX);
+    check("recepção A NÃO cadastra com origem na unidade B", !!insB.error);
+    const idY = uuid();
+    const insAuto = await rA.from("customers").insert({ id: idY, created_unit_id: unitA.id, registered_via: "autocadastro", full_name: "Auto " + tag });
+    if (!insAuto.error) created.customers.push(idY);
+    check("recepção NÃO grava como 'autocadastro'", !!insAuto.error);
+    const idZ = uuid();
+    const dupCpf = await rA.from("customers").insert({ id: idZ, created_unit_id: unitA.id, full_name: "Cpf Repetido " + tag, cpf });
+    if (!dupCpf.error) created.customers.push(idZ);
+    check("CPF repetido na rede é rejeitado", !!dupCpf.error);
+    const badPhone = await rA.from("customers").update({ phone: "123" }).eq("id", idA);
+    check("telefone inválido é rejeitado", !!badPhone.error);
+    const badMail = await rA.from("customers").update({ email: "sem-arroba" }).eq("id", idA);
+    check("e-mail inválido é rejeitado", !!badMail.error);
+
+    const full = await rA
+      .from("customers")
+      .update({ email: "teste@donguillermo.dev", birth_date: "1990-05-20", referral_source: "instagram", marketing_consent: true, consent_at: new Date().toISOString(), state: "SP", cep: "01310100" })
+      .eq("id", idA)
+      .select();
+    check("recepção A edita a ficha completa", full.data?.length === 1, full.error?.message);
+    const moveOrigin = await rA.from("customers").update({ created_unit_id: unitB.id }).eq("id", idA);
+    check("unidade de origem NÃO muda", !!moveOrigin.error);
+    const changeVia = await rA.from("customers").update({ registered_via: "autocadastro" }).eq("id", idA);
+    check("forma de cadastro NÃO muda", !!changeVia.error);
+    const del = await rA.from("customers").delete().eq("id", idA).select();
+    check("NÃO exclui cliente (sem DELETE)", !!del.error || !del.data?.length);
+
+    const names = await rA.rpc("network_units");
+    const nameIds = (names.data ?? []).map((u) => u.id);
+    check("network_units() lista as unidades da rede para a recepção", nameIds.includes(unitA.id) && nameIds.includes(unitB.id), JSON.stringify(names.error));
+
+    // A ficha é da rede: a recepção de outra unidade vê e edita
+    const seeB = await rB.from("customers").select("id, created_unit_id").eq("id", idA);
+    check("recepção B VÊ o cliente cadastrado na unidade A", seeB.data?.length === 1 && seeB.data[0].created_unit_id === unitA.id);
+    const updB = await rB.from("customers").update({ city: "Santo André" }).eq("id", idA).select();
+    check("recepção B edita o cliente da unidade A", updB.data?.length === 1, updB.error?.message);
+    const keep = await rB.from("customers").select("created_unit_id").eq("id", idA);
+    check("a origem continua a unidade A", keep.data?.[0]?.created_unit_id === unitA.id);
+    const idB = uuid();
+    const insFromB = await rB.from("customers").insert({ id: idB, created_unit_id: unitB.id, full_name: "Cliente B " + tag, phone: "11922223333" });
+    if (!insFromB.error) created.customers.push(idB);
+    check("recepção B cadastra cliente com origem na unidade B", !insFromB.error, insFromB.error?.message);
+
+    // Quem não é recepção/admin
+    const bRead = await bc.from("customers").select("id");
+    check("barbeiro NÃO lê clientes", !bRead.data?.length);
+    const idW = uuid();
+    const bIns = await bc.from("customers").insert({ id: idW, created_unit_id: unitA.id, full_name: "Do Barbeiro " + tag });
+    if (!bIns.error) created.customers.push(idW);
+    check("barbeiro NÃO cadastra cliente", !!bIns.error);
+    const bUpd = await bc.from("customers").update({ city: "Hack" }).eq("id", idA).select();
+    check("barbeiro NÃO edita cliente", !bUpd.data?.length);
+    const bUnits = await bc.rpc("network_units");
+    check("barbeiro NÃO lista unidades da rede", !(bUnits.data ?? []).length);
+    const semRead = await sem.from("customers").select("id");
+    check("usuário sem papel não lê clientes", !semRead.data?.length);
+    const anonRead = await anon.from("customers").select("id");
+    check("anônimo não lê clientes", !anonRead.data?.length);
+    const anonIns = await anon.from("customers").insert({ id: uuid(), created_unit_id: unitA.id, full_name: "Anon " + tag });
+    check("anônimo não cadastra cliente", !!anonIns.error);
+    const anonUnits = await anon.rpc("network_units");
+    check("anônimo não lista unidades pela função", !(anonUnits.data ?? []).length);
+
+    const admRead = await adm.from("customers").select("id").in("id", [idA, idB]);
+    check("admin vê clientes de todas as origens", (admRead.data ?? []).length === 2);
+
+    // ---- Observações ----
+    const n1 = await rA.from("customer_notes").insert({ customer_id: idA, unit_id: unitA.id, body: "Gosta de máquina 2." }).select("id, created_by, author_name, unit_id");
+    check("recepção A adiciona observação", n1.data?.length === 1, n1.error?.message);
+    const note = n1.data?.[0];
+    check("autor vem da sessão e o nome fica gravado", note?.created_by === people.recepA.id && !!note?.author_name, JSON.stringify(note));
+    const forged = await rA.from("customer_notes").insert({ customer_id: idA, unit_id: unitA.id, body: "Forjada", created_by: people.recepB.id });
+    check("NÃO assina como outra pessoa", !!forged.error);
+    const forgedName = await rA.from("customer_notes").insert({ customer_id: idA, unit_id: unitA.id, body: "Forjada", author_name: "Fulano" });
+    check("NÃO escolhe o nome do autor", !!forgedName.error);
+    const wrongUnit = await rA.from("customer_notes").insert({ customer_id: idA, unit_id: unitB.id, body: "Unidade errada" });
+    check("recepção A NÃO grava observação com a unidade B", !!wrongUnit.error);
+    const empty = await rA.from("customer_notes").insert({ customer_id: idA, unit_id: unitA.id, body: "   " });
+    check("observação vazia é rejeitada", !!empty.error);
+    const long = await rA.from("customer_notes").insert({ customer_id: idA, unit_id: unitA.id, body: "a".repeat(1001) });
+    check("observação acima de 1000 caracteres é rejeitada", !!long.error);
+    const n2 = await rA.from("customer_notes").insert({ customer_id: idA, unit_id: unitA.id, body: "Alergia a pomada X." }).select("id");
+    check("o cliente pode ter várias observações", n2.data?.length === 1, n2.error?.message);
+    const list = await rA.from("customer_notes").select("id").eq("customer_id", idA);
+    check("recepção A lê as observações do cliente", (list.data ?? []).length === 2);
+
+    const edit = await rA.from("customer_notes").update({ body: "Gosta da máquina 3." }).eq("id", note.id).select("body, created_by, created_at, updated_at");
+    check("recepção A edita a observação", edit.data?.[0]?.body === "Gosta da máquina 3.", edit.error?.message);
+    check("editar preserva o autor e atualiza updated_at", edit.data?.[0]?.created_by === people.recepA.id && edit.data[0].updated_at > edit.data[0].created_at);
+    const swapAuthor = await rA.from("customer_notes").update({ created_by: people.recepB.id }).eq("id", note.id);
+    check("autor da observação NÃO muda", !!swapAuthor.error);
+    const swapUnit = await rA.from("customer_notes").update({ unit_id: unitB.id }).eq("id", note.id);
+    check("unidade da observação NÃO muda", !!swapUnit.error);
+    const swapCustomer = await rA.from("customer_notes").update({ customer_id: idB }).eq("id", note.id);
+    check("a observação NÃO muda de cliente", !!swapCustomer.error);
+
+    const seeNotesB = await rB.from("customer_notes").select("id").eq("customer_id", idA);
+    check("recepção B lê as observações do cliente da unidade A", (seeNotesB.data ?? []).length === 2);
+    const editB = await rB.from("customer_notes").update({ body: "Editada pela B." }).eq("id", note.id).select("created_by");
+    check("recepção B edita observação escrita pela A", editB.data?.length === 1 && editB.data[0].created_by === people.recepA.id, editB.error?.message);
+    const noteB = await rB.from("customer_notes").insert({ customer_id: idA, unit_id: unitB.id, body: "Escrita na B." }).select("id, unit_id");
+    check("recepção B escreve no cliente da A com a própria unidade", noteB.data?.[0]?.unit_id === unitB.id, noteB.error?.message);
+    const noteBwrong = await rB.from("customer_notes").insert({ customer_id: idA, unit_id: unitA.id, body: "Na unidade A pela B" });
+    check("recepção B NÃO grava observação com a unidade A", !!noteBwrong.error);
+    const delB = await rB.from("customer_notes").delete().eq("id", noteB.data?.[0]?.id).select("id");
+    check("recepção B exclui observação", delB.data?.length === 1, delB.error?.message);
+
+    const bNotes = await bc.from("customer_notes").select("id");
+    check("barbeiro NÃO lê observações", !bNotes.data?.length);
+    const bNoteIns = await bc.from("customer_notes").insert({ customer_id: idA, unit_id: unitA.id, body: "Do barbeiro" });
+    check("barbeiro NÃO escreve observação", !!bNoteIns.error);
+    const bNoteDel = await bc.from("customer_notes").delete().eq("customer_id", idA).select("id");
+    check("barbeiro NÃO exclui observação", !bNoteDel.data?.length);
+    const semNotes = await sem.from("customer_notes").select("id");
+    check("usuário sem papel não lê observações", !semNotes.data?.length);
+    const anonNotes = await anon.from("customer_notes").select("id");
+    check("anônimo não lê observações", !anonNotes.data?.length);
+    const anonNoteIns = await anon.from("customer_notes").insert({ customer_id: idA, unit_id: unitA.id, body: "Anon" });
+    check("anônimo não escreve observação", !!anonNoteIns.error);
+
+    const admNote = await adm.from("customer_notes").insert({ customer_id: idB, unit_id: unitB.id, body: "Do admin" }).select("id");
+    check("admin escreve observação em qualquer unidade", admNote.data?.length === 1, admNote.error?.message);
+    const delA = await rA.from("customer_notes").delete().eq("id", note.id).select("id");
+    check("recepção A exclui a própria observação", delA.data?.length === 1, delA.error?.message);
+
+    // ---- Fotos dos clientes (Storage) ----
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const photoBucket = (c) => c.storage.from("customer-photos");
+    const photoPath = idA + ".png";
+    created.customerPhotos.push(photoPath);
+    const up = await photoBucket(rA).upload(photoPath, png, { contentType: "image/png", upsert: true });
+    check("recepção A envia a foto do cliente (<id>.png)", !up.error, up.error?.message);
+    const upFolder = await photoBucket(rA).upload(unitA.id + "/" + photoPath, png, { contentType: "image/png" });
+    check("foto dentro de pasta é rejeitada", !!upFolder.error);
+    const upName = await photoBucket(rA).upload("foto.png", png, { contentType: "image/png" });
+    check("nome que não é o id do cliente em UUID é rejeitado", !!upName.error);
+    const upMime = await photoBucket(rA).upload(idA + ".webp", Buffer.from("texto"), { contentType: "text/plain" });
+    check("tipo de arquivo fora de imagem é rejeitado", !!upMime.error);
+    const upBig = await photoBucket(rA).upload(uuid() + ".webp", Buffer.alloc(1_100_000, 1), { contentType: "image/webp" });
+    check("foto acima de 1 MB é rejeitada", !!upBig.error);
+    const saved = await rA.from("customers").update({ photo_path: photoPath }).eq("id", idA).select("id");
+    check("recepção A salva o caminho da foto no cliente", saved.data?.length === 1, saved.error?.message);
+    const badPhoto = await rA.from("customers").update({ photo_path: "foto.png" }).eq("id", idA);
+    check("caminho de foto fora do padrão é rejeitado", !!badPhoto.error);
+    const pub = photoBucket(anon).getPublicUrl(photoPath).data.publicUrl;
+    const res = await fetch(pub);
+    check("foto abre por URL pública, sem login", res.status === 200, "status " + res.status);
+    const bUp = await photoBucket(bc).upload(uuid() + ".png", png, { contentType: "image/png" });
+    check("barbeiro NÃO envia foto de cliente", !!bUp.error);
+    const semUp = await photoBucket(sem).upload(uuid() + ".png", png, { contentType: "image/png" });
+    check("usuário sem papel NÃO envia foto de cliente", !!semUp.error);
+    const admPhoto = uuid() + ".png";
+    created.customerPhotos.push(admPhoto);
+    const admUp = await photoBucket(adm).upload(admPhoto, png, { contentType: "image/png" });
+    check("admin envia foto de cliente", !admUp.error, admUp.error?.message);
+  }
+
   // ---- 8) Unidade desativada ----
   console.log("\n[unidade B desativada]");
   {
@@ -391,6 +585,8 @@ try {
     const adm = await login(people.admin.email, people.admin.password);
     const ua = await adm.from("units").select("id").eq("id", unitB.id);
     check("admin ainda vê a unidade inativa", ua.data?.length === 1);
+    const cu = await c.from("customers").select("id");
+    check("recepção B perde acesso aos clientes (unidade inativa)", !cu.data?.length);
   }
 } catch (err) {
   failures++;
@@ -399,6 +595,8 @@ try {
   // ---- Limpeza ----
   if (created.photos.length) await admin.storage.from("barber-photos").remove(created.photos).catch(() => {});
   if (created.images.length) await admin.storage.from("service-images").remove(created.images).catch(() => {});
+  if (created.customerPhotos.length) await admin.storage.from("customer-photos").remove(created.customerPhotos).catch(() => {});
+  if (created.customers.length) await admin.from("customers").delete().in("id", created.customers);
   for (const id of created.users) await admin.auth.admin.deleteUser(id).catch(() => {});
   for (const id of created.units) await admin.from("units").delete().eq("id", id);
   console.log(`\n${total - failures}/${total} verificações passaram.`);

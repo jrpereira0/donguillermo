@@ -49,7 +49,7 @@ Tudo é salvo por um único botão. A aba com erro ganha um ponto vermelho e abr
 
 ## Banco
 
-Tabela `barbers` e bucket de fotos (migrations `0300` a `0700`, ver [modelo-de-dados.md](modelo-de-dados.md)). Testes: `npm test`, `npm run test:rls:offline`, `npm run test:rls` e `npm run test:access`.
+Tabela `barbers` e bucket de fotos (migrations `0300` a `0700`, ver [modelo-de-dados.md](modelo-de-dados.md)). Testes: `npm test`, `npm run test:rls:offline`, `npm run test:rls`, `npm run test:access` e `npm run test:e2e` (navegador real; ver [servicos.md](servicos.md#testes)). A foto usa o mesmo fluxo do cliente (ver [clientes.md](clientes.md)).
 
 ## Componentes reutilizáveis criados
 

@@ -10,9 +10,10 @@ const barbA: Membership = { role: "barbeiro", unit: A };
 const labels = (m: Membership[], slug: string) => navItemsFor(m, slug).map((i) => i.label);
 
 describe("navItemsFor", () => {
-  it("recepção vê as 6 áreas da recepção", () => {
+  it("recepção vê as 7 áreas da recepção", () => {
     expect(labels([recepA], "un-a")).toEqual([
       "Agenda",
+      "Clientes",
       "Profissionais",
       "Serviços",
       "Produtos",
@@ -21,7 +22,7 @@ describe("navItemsFor", () => {
     ]);
   });
   it("admin da rede vê o mesmo menu em qualquer unidade (sem Minha agenda)", () => {
-    expect(labels([admin], "qualquer")).toHaveLength(6);
+    expect(labels([admin], "qualquer")).toHaveLength(7);
     expect(labels([admin], "qualquer")).not.toContain("Minha agenda");
   });
   it("barbeiro vê só Minha agenda", () => {
@@ -31,6 +32,6 @@ describe("navItemsFor", () => {
     expect(labels([recepA], "outra")).toEqual([]);
   });
   it("links apontam para /u/<slug>/<área>", () => {
-    expect(navItemsFor([recepA], "un-a")[1]!.href).toBe("/u/un-a/profissionais");
+    expect(navItemsFor([recepA], "un-a")[1]!.href).toBe("/u/un-a/clientes");
   });
 });

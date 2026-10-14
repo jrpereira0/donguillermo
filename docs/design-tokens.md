@@ -105,6 +105,27 @@ Todas as telas dentro de `(auth)` (login, esqueci a senha, definir senha, link i
 - **Movimento reduzido**: todas as animações são desligadas para quem usa `prefers-reduced-motion`.
 - Esses acabamentos usam tons derivados do dourado da marca (`rgb(192 160 98 / x)`), definidos em `globals.css`. Se o dourado da marca mudar, ajuste esses valores junto com `--brand-gold`.
 
+### Área da unidade (recepção): peças reutilizáveis
+
+As telas de `/u/<slug>/*` usam estas peças. Antes de criar outra, reaproveite.
+
+| Peça | Onde | Uso |
+|---|---|---|
+| `UnitShell` + `UnitSidebar` | `src/components/unit/` | Moldura da unidade: menu lateral (recolhe no celular) com a marca, unidade, e-mail e **Sair**. A borda dourada fina vem de `.sidebar-edge` (`globals.css`). Os itens do menu saem de `nav.ts` por papel |
+| `PageHeader` | `src/components/unit/page-header.tsx` | Eyebrow, título e descrição da página, com área de ações |
+| `ComingSoon` | `src/components/unit/coming-soon.tsx` | Página "Em breve" dos módulos ainda não construídos |
+| `FormSection` / `Field` | `src/components/unit/form-parts.tsx` | Bloco de formulário com título e campo com rótulo, dica e erro no padrão (erro some ao corrigir) |
+| `TabList` | `src/components/unit/tab-list.tsx` | Abas da ficha (cadastros de profissional e cliente). Ids `<ficha>-tab-<id>` e `<ficha>-panel-<id>`; teclado e acessibilidade já tratados |
+| `Select`, `Switch`, `Textarea` | `src/components/ui/` | Campos no padrão da marca (lista própria, não o `<select>` do navegador) |
+| `PhotoUploader` + `PhotoCropper` | `src/components/unit/` | Envio de foto com recorte, compressão em WebP e caminho configurável (`buildPath`) para cada bucket |
+| `Notice` / `FlashNotice` | `src/components/ui/notice.tsx` | Aviso de sucesso que aparece no canto, fecha sozinho e tem botão de fechar. `FlashNotice` lê `?aviso=` depois de um redirecionamento (ex.: cadastro criado) |
+| `FormAlert` | `src/components/auth/` | Aviso dentro do formulário (erro, sucesso, informação) |
+| `LuxeFrame` | `src/components/ui/luxe-frame.tsx` | Estados vazios e cartões de destaque ("Nenhum cliente cadastrado") |
+
+Padrões de lista: **tabela** em telas largas (`xl`) e **cartões** no celular, com o link da linha cobrindo o cartão inteiro (`stretched link`) e os botões de ação por cima; busca no servidor com pausa antes de filtrar; selo de status (Ativo/Inativo) com `Badge`. Mensagens de sucesso de ações que não saem da página usam `Notice`; as que redirecionam usam `FlashNotice`.
+
+Regras de texto: português correto com acentos, sem emojis, ícones de linha (lucide), mensagens de erro genéricas para quem não deve saber detalhes (segurança) e claras no campo para quem preenche.
+
 ## Como trocar a identidade
 
 1. **Cores**: edite o bloco `:root` em `src/app/globals.css`. Os tokens semânticos do shadcn (`--primary`, `--card`...) apontam para os `--brand-*`, então mudar a marca atualiza tudo.

@@ -27,6 +27,7 @@ export const ROLE_LABEL: Record<AppRole, string> = {
 /** Áreas de unidade e quais papéis podem entrar nelas. */
 export type UnitArea =
   | "agenda"
+  | "clientes"
   | "profissionais"
   | "servicos"
   | "produtos"
@@ -36,6 +37,7 @@ export type UnitArea =
 
 export const AREA_ROLE: Record<UnitArea, AppRole> = {
   agenda: "recepcao",
+  clientes: "recepcao",
   profissionais: "recepcao",
   servicos: "recepcao",
   produtos: "recepcao",

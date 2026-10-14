@@ -1,11 +1,12 @@
 import { canAccessUnitArea, isNetworkAdmin, type Membership, type UnitArea } from "@/lib/auth/roles";
 
-export type NavIcon = "agenda" | "profissionais" | "servicos" | "produtos" | "caixa" | "configuracoes";
+export type NavIcon = "agenda" | "clientes" | "profissionais" | "servicos" | "produtos" | "caixa" | "configuracoes";
 
 export type NavItem = { href: string; label: string; icon: NavIcon };
 
 const RECEPTION_ITEMS: { area: UnitArea; label: string; icon: NavIcon }[] = [
   { area: "agenda", label: "Agenda", icon: "agenda" },
+  { area: "clientes", label: "Clientes", icon: "clientes" },
   { area: "profissionais", label: "Profissionais", icon: "profissionais" },
   { area: "servicos", label: "Serviços", icon: "servicos" },
   { area: "produtos", label: "Produtos", icon: "produtos" },

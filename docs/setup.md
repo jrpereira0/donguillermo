@@ -48,6 +48,8 @@ O `.env.local` está no `.gitignore`. Só o `.env.example` (sem valores) é vers
 | `npm run test:rls` | Testa a RLS no Supabase real (usuários temporários) |
 | `npm test` | Testes unitários (Vitest) |
 | `npm run test:access` | Testa redirecionamento e acesso por papel (precisa do `npm run dev` rodando) |
+| `npm run test:e2e` | Teste de ponta a ponta no navegador (Profissionais e Serviços). Precisa do `npm run dev` rodando e de Edge ou Chrome instalado; `HEADED=1` mostra a janela |
+| `npm run test:e2e:clientes` | Teste de ponta a ponta no navegador do módulo Clientes (mesmos requisitos) |
 
 ## Banco de dados (Etapa 2)
 

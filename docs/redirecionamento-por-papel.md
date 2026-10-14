@@ -34,6 +34,9 @@ flowchart TD
 | `/admin` | ✅ | ❌ | ❌ | ❌ | ❌ |
 | `/u/<slug>/agenda` | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `/u/<slug>/minha-agenda` | ✅ | ❌ | ✅ | ❌ | ❌ |
+| `/u/<slug>/clientes`, `profissionais`, `servicos`, `produtos`, `caixa`, `configuracoes` | ✅ | ✅ | ❌ | ❌ | ❌ |
+
+Cada área tem um papel exigido em `AREA_ROLE` (`src/lib/auth/roles.ts`): `agenda`, `clientes`, `profissionais`, `servicos`, `produtos`, `caixa` e `configuracoes` são da recepção; `minha-agenda` é do barbeiro. O admin da rede entra em todas. O menu lateral (`src/components/unit/nav.ts`) só mostra o que o papel pode abrir.
 
 Todo acesso indevido vai para **`/sem-acesso?motivo=area`**, inclusive quando a unidade nem existe. Assim não se revela quais unidades existem.
 
@@ -61,11 +64,12 @@ Páginas protegidas usam `export const instant = false` (Next 16): bloqueiam no 
 | `src/lib/auth/roles.ts` | Regras **puras**: destinos, `resolveHome`, `canAccessUnitArea` (testadas com Vitest) |
 | `src/lib/auth/session.ts` | `getAuthContext()`: usuário + vínculos lidos **sob a RLS**; ignora vínculo sem unidade ativa |
 | `src/lib/auth/guards.ts` | Guardas que redirecionam |
-| `src/components/app-shell.tsx` | Moldura: marca, papel, unidade, e-mail e **Sair** |
+| `src/components/app-shell.tsx` | Moldura do painel da rede: marca, papel, e-mail e **Sair** |
+| `src/components/unit/{unit-shell,unit-sidebar,nav}.tsx` | Moldura da unidade com menu lateral por papel |
 | `src/app/page.tsx` | `/` decide o destino |
 | `src/app/entrar/page.tsx` | Escolha de área |
 | `src/app/sem-acesso/page.tsx` | Mensagem genérica de acesso negado |
-| `src/app/admin/*`, `src/app/u/[slug]/*` | Áreas protegidas (conteúdo entra nas próximas fases) |
+| `src/app/admin/*`, `src/app/u/[slug]/*` | Áreas protegidas (conteúdo dos módulos em construção entra nas próximas fases) |
 
 ## Como testar
 

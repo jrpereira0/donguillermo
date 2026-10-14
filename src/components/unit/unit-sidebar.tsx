@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
+  Contact,
   LogOut,
   Menu,
   Package,
@@ -23,6 +24,7 @@ import type { NavIcon, NavItem } from "./nav";
 
 const ICONS: Record<NavIcon, LucideIcon> = {
   agenda: CalendarDays,
+  clientes: Contact,
   profissionais: Users,
   servicos: Scissors,
   produtos: Package,

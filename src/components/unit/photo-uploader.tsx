@@ -15,6 +15,8 @@ type Props = {
   unitId: string;
   /** Dono da imagem (barbeiro ou serviço): vira o nome do arquivo `<unidade>/<id>.<ext>`. */
   barberId: string;
+  /** Monta o caminho do arquivo no bucket a partir da extensão (padrão: `<unidade>/<id>.<ext>`). */
+  buildPath?: (ext: string) => string;
   /** Usado só pelo avatar padrão (iniciais). */
   name?: string;
   /** Bucket do Storage (padrão: fotos dos profissionais). */
@@ -48,6 +50,7 @@ export function PhotoUploader({
   unitId,
   barberId,
   name = "?",
+  buildPath,
   bucket = PHOTO_BUCKET,
   fieldName = "photoPath",
   noun = "foto",
@@ -103,7 +106,7 @@ export function PhotoUploader({
 
   async function upload(blob: Blob) {
     const ext = blob.type === "image/webp" ? "webp" : "jpg";
-    const newPath = `${unitId}/${barberId}.${ext}`;
+    const newPath = buildPath ? buildPath(ext) : `${unitId}/${barberId}.${ext}`;
     const supabase = createClient();
     setBusyBoth(true);
     try {

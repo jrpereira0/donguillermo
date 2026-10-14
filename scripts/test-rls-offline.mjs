@@ -249,11 +249,174 @@ r = await q("insert into storage.objects (bucket_id, name) values ('service-imag
 await as(recepA);
 r = await q("delete from storage.objects where name=$1", [imgA]); check("recepção A apaga a própria imagem", r.n === 1 && !r.err, JSON.stringify(r));
 
+console.log("\n[clientes (cadastro único da rede)]");
+await db.exec("reset role");
+const NEW = () => crypto.randomUUID();
+const INS = "insert into customers (id, created_unit_id, full_name, phone, cpf) values ($1,$2,$3,$4,$5) returning id";
+
+r = await q("select 1 from information_schema.columns where table_name='customers' and column_name='notes'");
+check("coluna antiga customers.notes foi removida (agora é lista)", r.rows.length === 0);
+r = await q("select public, file_size_limit, allowed_mime_types from storage.buckets where id='customer-photos'");
+check("bucket customer-photos existe, público, 1 MB, só imagens", r.rows.length === 1 && r.rows[0].public === true && Number(r.rows[0].file_size_limit) === 1048576 && r.rows[0].allowed_mime_types.length === 3, JSON.stringify(r.rows));
+
+await as(recepA);
+r = await q("select is_any_reception() as v"); check("is_any_reception() = true para recepção", r.rows[0]?.v === true);
+const cA = NEW();
+r = await q(INS, [cA, A, "José Ânimo da Silva", "11912345678", "52998224725"]); check("recepção A cadastra cliente com origem na unidade A", !r.err && r.rows.length === 1, r.err);
+r = await q("select search_name, registered_via, marketing_consent, is_active from customers where id=$1", [cA]);
+check("search_name vem sem acento e em minúsculas", r.rows[0]?.search_name === "jose animo da silva", JSON.stringify(r.rows));
+check("padrões: via 'recepcao', sem consentimento, ativo", r.rows[0]?.registered_via === "recepcao" && r.rows[0]?.marketing_consent === false && r.rows[0]?.is_active === true);
+r = await q(INS, [NEW(), B, "Origem Em B", "11911112222", null]); check("recepção A NÃO cadastra com origem na unidade B", !!r.err);
+r = await q("insert into customers (id, full_name, phone) values ($1,'Sem Origem','11911112222')", [NEW()]); check("recepção NÃO cadastra sem unidade de origem", !!r.err);
+r = await q("insert into customers (id, created_unit_id, registered_via, full_name) values ($1,$2,'autocadastro','Auto Cadastro')", [NEW(), A]); check("recepção NÃO grava como 'autocadastro' (só o servidor)", !!r.err);
+r = await q(INS, [NEW(), A, "Outro Mesmo Cpf", "11911112222", "52998224725"]); check("CPF repetido na rede é rejeitado", !!r.err);
+r = await q(INS, [NEW(), A, "Telefone Repetido", "11912345678", null]); check("telefone repetido é permitido (famílias dividem número)", !r.err, r.err);
+r = await q(INS, [NEW(), A, "Sem Cpf Um", "11911110000", null]);
+r = await q(INS, [NEW(), A, "Sem Cpf Dois", "11911110001", null]); check("vários clientes sem CPF são permitidos", !r.err, r.err);
+
+for (const [nome, col, val] of [
+  ["telefone inválido", "phone", "123"],
+  ["CPF com formato inválido", "cpf", "123.456"],
+  ["e-mail inválido", "email", "sem-arroba"],
+  ["UF em minúsculas", "state", "sp"],
+  ["CEP inválido", "cep", "123"],
+  ["nascimento no futuro", "birth_date", "2999-01-01"],
+  ["nascimento antes de 1900", "birth_date", "1800-01-01"],
+  ["nome com 1 letra", "full_name", "A"],
+  ["foto com nome fora do padrão", "photo_path", "foto.webp"],
+  ["origem 'como conheceu' inválida", "referral_source", "tv"],
+]) {
+  r = await q(`update customers set ${col}=$1 where id=$2`, [val, cA]);
+  check(`${nome} é rejeitado`, !!r.err, JSON.stringify(r));
+}
+r = await q("update customers set referral_source='instagram', marketing_consent=true, consent_at=now(), email='jose@x.com', state='SP', cep='01310100', birth_date='1990-05-20' where id=$1", [cA]);
+check("recepção A edita dados completos do cliente", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("update customers set photo_path=$1 where id=$2", [`${cA}.webp`, cA]); check("foto <id>.webp é aceita", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("update customers set created_unit_id=$1 where id=$2", [B, cA]); check("unidade de origem NÃO muda (sem privilégio de coluna)", !!r.err);
+r = await q("update customers set registered_via='autocadastro' where id=$1", [cA]); check("forma de cadastro NÃO muda (sem privilégio de coluna)", !!r.err);
+r = await q("update customers set created_at=now() where id=$1", [cA]); check("data de cadastro NÃO muda (sem privilégio de coluna)", !!r.err);
+r = await q("update customers set is_active=false where id=$1", [cA]); check("recepção desativa cliente", r.n === 1 && !r.err);
+await q("update customers set is_active=true where id=$1", [cA]);
+r = await q("delete from customers where id=$1", [cA]); check("NÃO exclui cliente (sem DELETE)", !!r.err || r.n === 0);
+r = await q("select id, name from network_units()"); check("network_units() devolve as unidades da rede (A e B)", r.rows.some((x) => x.id === A) && r.rows.some((x) => x.id === B), JSON.stringify(r.rows));
+
+await as(recepB);
+r = await q("select id, created_unit_id from customers where id=$1", [cA]); check("recepção B (outra unidade) VÊ o cliente da A: cadastro é da rede", r.rows.length === 1 && r.rows[0].created_unit_id === A, JSON.stringify(r.rows));
+r = await q("update customers set city='Santo André' where id=$1", [cA]); check("recepção B edita cliente cadastrado na unidade A", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("select created_unit_id from customers where id=$1", [cA]); check("origem continua a unidade A depois da edição pela B", r.rows[0]?.created_unit_id === A);
+const cB = NEW();
+r = await q(INS, [cB, B, "Cliente Da B", "11922223333", null]); check("recepção B cadastra cliente com origem na unidade B", !r.err, r.err);
+r = await q(INS, [NEW(), A, "Origem Em A Pela B", "11922224444", null]); check("recepção B NÃO cadastra com origem na unidade A", !!r.err);
+
+await as(barbA);
+r = await q("select id from customers"); check("barbeiro NÃO lê clientes", r.rows.length === 0, r.rows.length);
+r = await q(INS, [NEW(), A, "Do Barbeiro", "11933334444", null]); check("barbeiro NÃO cadastra cliente", !!r.err);
+r = await q("update customers set city='Hack' where id=$1", [cA]); check("barbeiro NÃO edita cliente", r.n === 0 || !!r.err);
+r = await q("select is_any_reception() as v"); check("is_any_reception() = false para barbeiro", r.rows[0]?.v === false);
+r = await q("select id from network_units()"); check("barbeiro NÃO lista unidades da rede", r.rows.length === 0, r.rows.length);
+
+await as(nobody);
+r = await q("select id from customers"); check("usuário sem papel não lê clientes", r.rows.length === 0);
+r = await q(INS, [NEW(), A, "Sem Papel", "11944445555", null]); check("usuário sem papel não cadastra cliente", !!r.err);
+await as(null);
+r = await q("select id from customers"); check("anônimo não lê clientes", !!r.err || r.rows.length === 0);
+r = await q(INS, [NEW(), A, "Anonimo", "11955556666", null]); check("anônimo não cadastra cliente", !!r.err);
+r = await q("select id from network_units()"); check("anônimo não lista unidades pela função", !!r.err || r.rows.length === 0);
+
+await as(adm);
+r = await q("select id from customers"); check("admin vê clientes de todas as origens", r.rows.some((x) => x.id === cA) && r.rows.some((x) => x.id === cB));
+r = await q(INS, [NEW(), B, "Do Admin", "11966667777", null]); check("admin cadastra cliente em qualquer unidade", !r.err, r.err);
+r = await q("update customers set city='Admin' where id=$1", [cB]); check("admin edita qualquer cliente", r.n === 1 && !r.err);
+
+console.log("\n[clientes: observações (customer_notes)]");
+await as(recepA);
+const NOTE = "insert into customer_notes (customer_id, unit_id, body) values ($1,$2,$3) returning id, created_by, author_name, unit_id";
+r = await q(NOTE, [cA, A, "Gosta de máquina 2."]); check("recepção A adiciona observação ao cliente", !r.err && r.rows.length === 1, r.err);
+const nA = r.rows[0]?.id;
+check("autor vem da sessão (created_by = recepção A) e o nome é gravado", r.rows[0]?.created_by === recepA && !!r.rows[0]?.author_name, JSON.stringify(r.rows));
+check("unidade da observação gravada (A)", r.rows[0]?.unit_id === A);
+r = await q("insert into customer_notes (customer_id, unit_id, body, created_by) values ($1,$2,'Forjada',$3)", [cA, A, recepB]); check("NÃO dá para assinar como outra pessoa (created_by sem privilégio)", !!r.err);
+r = await q("insert into customer_notes (customer_id, unit_id, body, author_name) values ($1,$2,'Forjada','Fulano')", [cA, A]); check("NÃO dá para escolher o nome do autor (sem privilégio)", !!r.err);
+r = await q(NOTE, [cA, B, "Em nome da unidade B"]); check("recepção A NÃO grava observação com unidade B", !!r.err);
+r = await q("insert into customer_notes (customer_id, body) values ($1,'Sem unidade')", [cA]); check("observação sem unidade é rejeitada", !!r.err);
+r = await q(NOTE, [cA, A, ""]); check("observação vazia é rejeitada", !!r.err);
+r = await q(NOTE, [cA, A, "   "]); check("observação só com espaços é rejeitada", !!r.err);
+r = await q(NOTE, [cA, A, "a".repeat(1001)]); check("observação com mais de 1000 caracteres é rejeitada", !!r.err);
+r = await q(NOTE, [cA, A, "a".repeat(1000)]); check("observação com exatamente 1000 caracteres é aceita", !r.err, r.err);
+r = await q(NOTE, [cA, A, "Alergia a pomada X."]); check("o cliente pode ter VÁRIAS observações", !r.err, r.err);
+r = await q("select id from customer_notes where customer_id=$1", [cA]); check("recepção A lê as observações do cliente", r.rows.length === 3, r.rows.length);
+r = await q("update customer_notes set body='Gosta da máquina 3.' where id=$1", [nA]); check("recepção A edita a própria observação", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("select author_name, created_by, updated_at > created_at as editada from customer_notes where id=$1", [nA]);
+check("editar preserva o autor e atualiza updated_at", r.rows[0]?.created_by === recepA && r.rows[0]?.editada === true, JSON.stringify(r.rows));
+r = await q("update customer_notes set body='' where id=$1", [nA]); check("editar para vazio é rejeitado", !!r.err);
+for (const col of ["created_by", "author_name", "unit_id", "customer_id", "created_at"]) {
+  const val = col === "created_by" ? recepB : col === "unit_id" ? B : col === "customer_id" ? cB : col === "created_at" ? new Date().toISOString() : "Outro";
+  r = await q(`update customer_notes set ${col}=$1 where id=$2`, [val, nA]);
+  check(`coluna ${col} NÃO muda (sem privilégio)`, !!r.err, JSON.stringify(r));
+}
+
+await as(recepB);
+r = await q("select id from customer_notes where customer_id=$1", [cA]); check("recepção B (outra unidade) lê as observações do cliente da A", r.rows.length === 3, r.rows.length);
+r = await q("update customer_notes set body='Editada pela B.' where id=$1", [nA]); check("recepção B edita observação escrita pela A", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("select created_by, author_name from customer_notes where id=$1", [nA]); check("a observação continua assinada pela recepção A", r.rows[0]?.created_by === recepA);
+r = await q(NOTE, [cA, A, "Da B na unidade A"]); check("recepção B NÃO grava observação com unidade A", !!r.err);
+r = await q(NOTE, [cA, B, "Escrita na unidade B"]); check("recepção B grava observação do cliente da A (com a própria unidade)", !r.err, r.err);
+const nB = r.rows[0]?.id;
+r = await q("select unit_id from customer_notes where id=$1", [nB]); check("a unidade da observação (B) fica registrada", r.rows[0]?.unit_id === B);
+r = await q("delete from customer_notes where id=$1", [nB]); check("recepção B exclui observação", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("delete from customer_notes where id=$1", [nA]); check("recepção B exclui observação escrita pela A", r.n === 1 && !r.err, JSON.stringify(r));
+
+await as(barbA);
+r = await q("select id from customer_notes"); check("barbeiro NÃO lê observações", r.rows.length === 0);
+r = await q(NOTE, [cA, A, "Do barbeiro"]); check("barbeiro NÃO escreve observação", !!r.err);
+r = await q("update customer_notes set body='Hack' where customer_id=$1", [cA]); check("barbeiro NÃO edita observação", r.n === 0 || !!r.err);
+r = await q("delete from customer_notes where customer_id=$1", [cA]); check("barbeiro NÃO exclui observação", r.n === 0 || !!r.err);
+
+await as(nobody);
+r = await q("select id from customer_notes"); check("usuário sem papel não lê observações", r.rows.length === 0);
+r = await q(NOTE, [cA, A, "Sem papel"]); check("usuário sem papel não escreve observação", !!r.err);
+await as(null);
+r = await q("select id from customer_notes"); check("anônimo não lê observações", !!r.err || r.rows.length === 0);
+r = await q(NOTE, [cA, A, "Anônimo"]); check("anônimo não escreve observação", !!r.err);
+
+await as(adm);
+r = await q(NOTE, [cB, B, "Do admin"]); check("admin escreve observação em qualquer unidade", !r.err, r.err);
+r = await q("select id from customer_notes"); check("admin lê observações de todos os clientes", r.rows.length >= 3, r.rows.length);
+
+await db.exec("reset role");
+const nCas = (await db.query("select count(*)::int c from customer_notes where customer_id=$1", [cB])).rows[0].c;
+await db.query("delete from customers where id=$1", [cB]);
+r = await q("select count(*)::int c from customer_notes where customer_id=$1", [cB]);
+check("apagar o cliente apaga as observações (cascade)", nCas >= 1 && r.rows[0].c === 0, `${nCas} -> ${r.rows[0]?.c}`);
+
+console.log("\n[fotos dos clientes (storage)]");
+const PH = NEW();
+await as(recepA);
+r = await q("insert into storage.objects (bucket_id, name) values ('customer-photos', $1)", [`${PH}.webp`]); check("recepção A envia foto <id>.webp", !r.err, r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('customer-photos', $1)", [`${A}/${PH}.webp`]); check("foto dentro de pasta é rejeitada", !!r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('customer-photos', $1)", [`${PH}.gif`]); check("extensão fora de webp/jpg/png é rejeitada", !!r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('customer-photos', 'foto.webp')"); check("nome que não é UUID é rejeitado", !!r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('customer-photos', $1)", [`../${PH}.webp`]); check("caminho com ../ é rejeitado", !!r.err);
+await as(recepB);
+r = await q("select name from storage.objects where bucket_id='customer-photos'"); check("recepção de OUTRA unidade vê a foto (cliente é da rede)", r.rows.length === 1, r.rows.length);
+r = await q("update storage.objects set name=$1 where name=$2", [`${NEW()}.webp`, `${PH}.webp`]); check("recepção B pode substituir/mover a foto (qualquer recepção edita o cliente)", r.n === 1 && !r.err, JSON.stringify(r));
+await as(barbA);
+r = await q("select name from storage.objects where bucket_id='customer-photos'"); check("barbeiro NÃO vê fotos de clientes", r.rows.length === 0);
+r = await q("insert into storage.objects (bucket_id, name) values ('customer-photos', $1)", [`${NEW()}.png`]); check("barbeiro NÃO envia foto de cliente", !!r.err);
+await as(nobody);
+r = await q("insert into storage.objects (bucket_id, name) values ('customer-photos', $1)", [`${NEW()}.png`]); check("usuário sem papel NÃO envia foto de cliente", !!r.err);
+await as(adm);
+r = await q("insert into storage.objects (bucket_id, name) values ('customer-photos', $1)", [`${NEW()}.jpg`]); check("admin envia foto de cliente", !r.err, r.err);
+await as(recepA);
+r = await q("delete from storage.objects where bucket_id='customer-photos'"); check("recepção apaga fotos de clientes", r.n >= 1 && !r.err, JSON.stringify(r));
+
 console.log("\n[unidade B desativada]");
 await db.exec("reset role");
 await db.query("update units set is_active=false where id=$1", [B]);
 await as(recepB);
 r = await q("select id from units"); check("recepção B perde acesso", r.rows.length === 0);
+r = await q("select id from customers"); check("recepção B perde acesso aos clientes (unidade inativa)", r.rows.length === 0, r.rows.length);
+r = await q("select id from customer_notes"); check("recepção B perde acesso às observações (unidade inativa)", r.rows.length === 0, r.rows.length);
 await as(adm);
 r = await q("select id from units where id=$1", [B]); check("admin ainda vê", r.rows.length === 1);
 
