@@ -1,32 +1,17 @@
 import type { Metadata } from "next";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ComingSoon } from "@/components/unit/coming-soon";
 import { requireUnitArea } from "@/lib/auth/guards";
 
 export const metadata: Metadata = { title: "Minha agenda" };
 export const instant = false;
 
-export default async function MyAgendaPage({
+export default async function MinhaagendaPage({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const { unit } = await requireUnitArea(slug, "minha-agenda"); // só barbeiro (ou admin) desta unidade
+  await requireUnitArea(slug, "minha-agenda"); // cada página valida o acesso: o layout não re-executa na navegação
 
-  return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-3xl">Minha agenda</h1>
-      <Card>
-        <CardHeader>
-          <p className="label-caps">{unit.name}</p>
-          <CardTitle className="font-heading text-xl uppercase tracking-wide">
-            Área do barbeiro
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Em construção (área do barbeiro).
-        </CardContent>
-      </Card>
-    </div>
-  );
+  return <ComingSoon eyebrow="Barbeiro" title="Minha agenda" />;
 }

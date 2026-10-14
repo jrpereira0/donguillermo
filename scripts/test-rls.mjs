@@ -28,7 +28,7 @@ async function login(email, password) {
   return c;
 }
 
-const created = { users: [], units: [] };
+const created = { users: [], units: [], photos: [] };
 
 try {
   // ---- Preparação (service_role) ----
@@ -162,7 +162,104 @@ try {
     check("vê perfis de várias unidades", ids(p.data).includes(people.recepA.id) && ids(p.data).includes(people.recepB.id));
   }
 
-  // ---- 7) Unidade desativada ----
+  // ---- 7) Profissionais e fotos ----
+  console.log("\n[profissionais e fotos]");
+  {
+    const mkBarber = async (unit, fields) => {
+      const { data, error } = await admin
+        .from("barbers")
+        .insert({ unit_id: unit.id, ...fields })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    };
+    const barberA = await mkBarber(unitA, {
+      user_id: people.barbA.id,
+      full_name: "João da Silva",
+      display_name: "João",
+      cnpj: "11222333000181",
+    });
+    const barberB = await mkBarber(unitB, { full_name: "Pedro Souza", display_name: "Pedro" });
+
+    const rA = await login(people.recepA.email, people.recepA.password);
+    const list = await rA.from("barbers").select("id");
+    check("recepção A vê só os barbeiros da unidade A", ids(list.data).length === 1 && ids(list.data)[0] === barberA.id);
+    const ins = await rA.from("barbers").insert({ unit_id: unitA.id, full_name: "Invasor", display_name: "Inv" });
+    check("recepção NÃO insere barbeiro direto (só o servidor)", !!ins.error);
+    const upd = await rA.from("barbers").update({ display_name: "Joãozinho", commission_services_pct: 40 }).eq("id", barberA.id).select();
+    check("recepção A edita barbeiro da própria unidade", upd.data?.length === 1);
+    const updB = await rA.from("barbers").update({ display_name: "Hack" }).eq("id", barberB.id).select();
+    check("recepção A NÃO edita barbeiro da unidade B", !updB.data?.length);
+    const moveUnit = await rA.from("barbers").update({ unit_id: unitB.id }).eq("id", barberA.id);
+    check("NÃO troca a unidade do barbeiro", !!moveUnit.error);
+    const moveUser = await rA.from("barbers").update({ user_id: people.recepA.id }).eq("id", barberA.id);
+    check("NÃO troca a conta (user_id) do barbeiro", !!moveUser.error);
+    const badPct = await rA.from("barbers").update({ commission_products_pct: 101 }).eq("id", barberA.id);
+    check("comissão acima de 100% é rejeitada", !!badPct.error);
+
+    // 1x1 PNG (menor imagem válida)
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const pathA = `${unitA.id}/${barberA.id}.png`;
+    const pathB = `${unitB.id}/${barberB.id}.png`;
+    created.photos.push(pathA, pathB);
+    const bucket = (c) => c.storage.from("barber-photos");
+
+    const up = await bucket(rA).upload(pathA, png, { contentType: "image/png", upsert: true });
+    check("recepção A envia foto para a pasta da unidade A", !up.error, up.error?.message);
+    const upOther = await bucket(rA).upload(pathB, png, { contentType: "image/png", upsert: true });
+    check("recepção A NÃO envia foto para a pasta da unidade B", !!upOther.error);
+    const upMime = await bucket(rA).upload(`${unitA.id}/${barberA.id}.jpg`, Buffer.from("texto"), { contentType: "text/plain" });
+    check("tipo de arquivo fora de imagem é rejeitado", !!upMime.error);
+    const upBig = await bucket(rA).upload(`${unitA.id}/${barberA.id}.webp`, Buffer.alloc(1_100_000, 1), { contentType: "image/webp" });
+    check("arquivo acima de 1 MB é rejeitado", !!upBig.error);
+    const upName = await bucket(rA).upload(`${unitA.id}/qualquer-nome.png`, png, { contentType: "image/png" });
+    check("nome fora do padrão <unidade>/<barbeiro>.png é rejeitado", !!upName.error);
+
+    const savedPhoto = await rA.from("barbers").update({ photo_path: pathA }).eq("id", barberA.id).select();
+    check("recepção A salva o caminho da foto", savedPhoto.data?.length === 1);
+    const wrongPhoto = await rA.from("barbers").update({ photo_path: pathB }).eq("id", barberA.id);
+    check("NÃO aponta a foto para a pasta de outra unidade", !!wrongPhoto.error);
+
+    // A foto é pública (aparecerá na página pública de agendamento).
+    const pub = bucket(anonClient()).getPublicUrl(pathA).data.publicUrl;
+    const res = await fetch(pub);
+    check("foto abre por URL pública, sem login", res.status === 200, `status ${res.status}`);
+
+    const rB = await login(people.recepB.email, people.recepB.password);
+    const lb = await rB.from("barbers").select("id");
+    check("recepção B vê só o barbeiro da unidade B", ids(lb.data).length === 1 && ids(lb.data)[0] === barberB.id);
+    const rm = await bucket(rB).remove([pathA]);
+    const stillThere = await fetch(pub);
+    check("recepção B NÃO apaga foto da unidade A", stillThere.status === 200 && !(rm.data ?? []).length, JSON.stringify(rm.data));
+
+    const bc = await login(people.barbA.email, people.barbA.password);
+    const own = await bc.from("barbers").select("id");
+    check("barbeiro A vê só a própria linha", ids(own.data).length === 1 && ids(own.data)[0] === barberA.id);
+    const ownUpd = await bc.from("barbers").update({ commission_services_pct: 100 }).eq("id", barberA.id).select();
+    check("barbeiro NÃO altera a própria comissão", !ownUpd.data?.length);
+    const upBarb = await bucket(bc).upload(`${unitA.id}/${barberA.id}.png`, png, { contentType: "image/png", upsert: true });
+    check("barbeiro NÃO envia foto", !!upBarb.error);
+
+    const adm = await login(people.admin.email, people.admin.password);
+    const all = await adm.from("barbers").select("id");
+    // O banco de desenvolvimento pode ter outros profissionais reais: confere só os dois deste teste.
+    const allIds = ids(all.data);
+    check("admin vê barbeiros das duas unidades", allIds.includes(barberA.id) && allIds.includes(barberB.id));
+    const upAdm = await bucket(adm).upload(pathB, png, { contentType: "image/png", upsert: true });
+    check("admin envia foto em qualquer unidade", !upAdm.error, upAdm.error?.message);
+
+    const sem = await login(people.semPapel.email, people.semPapel.password);
+    const none = await sem.from("barbers").select("id");
+    check("usuário sem papel não vê barbeiros", !none.data?.length);
+    const anon = await anonClient().from("barbers").select("id");
+    check("anônimo não lê barbeiros", !anon.data?.length);
+  }
+
+  // ---- 8) Unidade desativada ----
   console.log("\n[unidade B desativada]");
   {
     await admin.from("units").update({ is_active: false }).eq("id", unitB.id);
@@ -178,6 +275,7 @@ try {
   console.error("\nErro inesperado:", err.message ?? err);
 } finally {
   // ---- Limpeza ----
+  if (created.photos.length) await admin.storage.from("barber-photos").remove(created.photos).catch(() => {});
   for (const id of created.users) await admin.auth.admin.deleteUser(id).catch(() => {});
   for (const id of created.units) await admin.from("units").delete().eq("id", id);
   console.log(`\n${total - failures}/${total} verificações passaram.`);

@@ -8,6 +8,13 @@ export const emailField = z
   .max(254, "E-mail muito longo.")
   .email("Informe um e-mail válido.");
 
+/** Mensagem de erro do e-mail digitado (para validar ao sair do campo), ou null se vazio/válido. */
+export function emailProblem(v: string): string | null {
+  if (v.trim() === "") return null;
+  const r = emailField.safeParse(v);
+  return r.success ? null : (r.error.issues[0]?.message ?? "Informe um e-mail válido.");
+}
+
 export const loginSchema = z.object({
   email: emailField,
   // No login não validamos força: só exigimos que exista (e limitamos o tamanho).

@@ -83,6 +83,18 @@ describe("canAccessUnitArea", () => {
   });
 });
 
+describe("áreas de cadastro da recepção", () => {
+  const areas = ["profissionais", "servicos", "produtos", "caixa", "configuracoes"] as const;
+
+  it.each(areas)("%s: só recepção da unidade (ou admin da rede)", (area) => {
+    expect(canAccessUnitArea([recepA], A.slug, area)).toBe(true);
+    expect(canAccessUnitArea([recepA], B.slug, area)).toBe(false);
+    expect(canAccessUnitArea([barbA], A.slug, area)).toBe(false);
+    expect(canAccessUnitArea([admin], B.slug, area)).toBe(true);
+    expect(canAccessUnitArea([], A.slug, area)).toBe(false);
+  });
+});
+
 describe("canSeeUnit", () => {
   it("só vê unidades onde tem vínculo", () => {
     expect(canSeeUnit([recepA], A.slug)).toBe(true);

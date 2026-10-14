@@ -78,6 +78,7 @@ export function PasswordFields({
           <PasswordInput
             id={`${id}-password`}
             name="password"
+            className="field-luxe"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -90,6 +91,7 @@ export function PasswordFields({
           <PasswordInput
             id={`${id}-confirm`}
             name="confirm"
+            className="field-luxe"
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}

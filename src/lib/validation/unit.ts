@@ -79,7 +79,10 @@ export const DAYS = [
 ] as const;
 
 export type DayKey = (typeof DAYS)[number]["key"];
-export type DayHours = { open: string; close: string } | { closed: true };
+/** `break` (almoço/intervalo) é opcional e só usado na agenda dos profissionais. */
+export type DayHours =
+  | { open: string; close: string; break?: { start: string; end: string } }
+  | { closed: true };
 /** Dias não informados ficam de fora do objeto. */
 export type OpeningHours = Partial<Record<DayKey, DayHours>>;
 
@@ -89,9 +92,12 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
  * Lê os campos hours_<dia>_{closed,open,close} do formulário.
  * Por dia: "fechado" marcado -> {closed}; os dois horários vazios -> dia não
  * informado; senão exige HH:MM válidos com abertura antes do fechamento.
+ * Com `withBreak`, lê também hours_<dia>_break_{start,end} (almoço): os dois ou nenhum,
+ * e o intervalo precisa ficar dentro do expediente.
  */
 export function parseOpeningHours(
   form: FormData,
+  options: { withBreak?: boolean } = {},
 ):
   | { ok: true; value: OpeningHours | null }
   | { ok: false; errors: Record<string, string> } {
@@ -112,7 +118,17 @@ export function parseOpeningHours(
     } else if (open >= close) {
       errors[`hours_${key}`] = `${label}: a abertura deve ser antes do fechamento.`;
     } else {
-      value[key] = { open, close };
+      const bs = options.withBreak ? String(form.get(`hours_${key}_break_start`) ?? "").trim() : "";
+      const be = options.withBreak ? String(form.get(`hours_${key}_break_end`) ?? "").trim() : "";
+      if (bs === "" && be === "") {
+        value[key] = { open, close };
+      } else if (!TIME.test(bs) || !TIME.test(be)) {
+        errors[`hours_${key}`] = `${label}: informe início e fim do almoço (HH:MM).`;
+      } else if (!(open < bs && bs < be && be < close)) {
+        errors[`hours_${key}`] = `${label}: o almoço deve ficar dentro do expediente, com início antes do fim.`;
+      } else {
+        value[key] = { open, close, break: { start: bs, end: be } };
+      }
     }
   }
 
@@ -121,20 +137,26 @@ export function parseOpeningHours(
 }
 
 /** Valores iniciais dos campos de horário a partir do JSON salvo. */
-export function hoursToFormDefaults(hours: unknown): Record<
-  DayKey,
-  { closed: boolean; open: string; close: string }
-> {
+export type DayFormDefaults = {
+  closed: boolean;
+  open: string;
+  close: string;
+  breakStart: string;
+  breakEnd: string;
+};
+
+export function hoursToFormDefaults(hours: unknown): Record<DayKey, DayFormDefaults> {
   const src = (hours && typeof hours === "object" ? hours : {}) as OpeningHours;
-  const out = {} as Record<DayKey, { closed: boolean; open: string; close: string }>;
+  const out = {} as Record<DayKey, DayFormDefaults>;
+  const blank = { closed: false, open: "", close: "", breakStart: "", breakEnd: "" };
   for (const { key } of DAYS) {
     const d = src[key];
     out[key] =
       d && "closed" in d
-        ? { closed: true, open: "", close: "" }
+        ? { ...blank, closed: true }
         : d
-          ? { closed: false, open: d.open, close: d.close }
-          : { closed: false, open: "", close: "" };
+          ? { ...blank, open: d.open, close: d.close, breakStart: d.break?.start ?? "", breakEnd: d.break?.end ?? "" }
+          : blank;
   }
   return out;
 }

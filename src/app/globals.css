@@ -496,6 +496,34 @@ input:autofill {
     flex-shrink: 0;
     color: var(--tone);
   }
+  /* Item do menu lateral: ativo = fio dourado à esquerda + leve tom dourado */
+  .nav-luxe {
+    position: relative;
+    transition:
+      color 0.25s ease,
+      background-color 0.25s ease;
+  }
+  .nav-luxe:hover {
+    color: var(--brand-cream);
+    background: rgb(242 237 228 / 0.05);
+  }
+  .nav-luxe[data-active="true"] {
+    color: var(--brand-cream);
+    background: linear-gradient(90deg, rgb(192 160 98 / 0.18), rgb(192 160 98 / 0.02));
+  }
+  .nav-luxe[data-active="true"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 22%;
+    bottom: 22%;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--brand-gold);
+  }
+  .nav-luxe[data-active="true"] > svg {
+    color: var(--brand-gold);
+  }
   .skeleton-luxe {
     border-radius: 0.5rem;
     background: rgb(242 237 228 / 0.08);
@@ -535,6 +563,181 @@ input:autofill {
   box-shadow: 0 0 0 3px rgb(229 96 77 / 0.16);
 }
 
+/* ==========================================================================
+ * BORDA DA SIDEBAR (`.sidebar-edge`): filete dourado de 1px na borda direita e,
+ * por cima, um fio de luz que percorre a borda de cima para baixo (mesma família
+ * do brilho que gira no `.luxe-frame`). Não define `position` de propósito: o
+ * <aside> já é fixed/sticky. Substitui o `border-r`.
+ * ========================================================================== */
+.sidebar-edge::before,
+.sidebar-edge::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+}
+.sidebar-edge::before {
+  background: linear-gradient(
+    180deg,
+    rgb(192 160 98 / 0.45),
+    rgb(69 68 67 / 0.7) 35%,
+    rgb(69 68 67 / 0.35)
+  );
+}
+.sidebar-edge::after {
+  background-image: linear-gradient(
+    180deg,
+    transparent,
+    rgb(222 195 135 / 0.95) 50%,
+    transparent
+  );
+  background-size: 100% 26%;
+  background-repeat: no-repeat;
+  background-position: 0 -40%;
+  filter: drop-shadow(0 0 5px rgb(222 195 135 / 0.55));
+  animation: sidebar-edge-run 8s ease-in-out infinite;
+}
+@keyframes sidebar-edge-run {
+  to {
+    background-position: 0 140%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-edge::after {
+    animation: none;
+    background-position: 0 12%;
+  }
+}
+
+/* ==========================================================================
+ * AVISO DA MARCA (`.notice-luxe`, via <Notice>): cartão flutuante de sucesso.
+ * Emblema em losango dourado (mesmo losango do padrão do login), reflexo de luz
+ * na entrada e filete que se esgota marcando o tempo (pausa no hover/foco).
+ * ========================================================================== */
+.notice-luxe {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: min(25rem, calc(100vw - 1.5rem));
+  overflow: hidden;
+  padding: 0.85rem 0.6rem 0.95rem 0.8rem;
+  border-radius: 0.875rem;
+  border: 1px solid rgb(192 160 98 / 0.5);
+  background: linear-gradient(180deg, rgb(36 36 36 / 0.97), rgb(17 17 17 / 0.98));
+  box-shadow:
+    0 22px 55px -14px rgb(0 0 0 / 0.9),
+    0 0 0 1px rgb(0 0 0 / 0.4),
+    inset 0 1px 0 rgb(242 237 228 / 0.08);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  animation: notice-in 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+/* Reflexo de luz que cruza o cartão uma vez, ao entrar */
+.notice-luxe::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(222 195 135 / 0.16), transparent);
+  animation: luxe-sweep 1.1s 0.3s ease both;
+}
+.notice-luxe__emblem {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  color: var(--brand-gold);
+}
+.notice-luxe__emblem::before {
+  content: "";
+  position: absolute;
+  inset: 0.45rem;
+  transform: rotate(45deg);
+  border-radius: 0.3rem;
+  border: 1px solid rgb(192 160 98 / 0.85);
+  background: radial-gradient(circle at 30% 30%, rgb(192 160 98 / 0.3), rgb(192 160 98 / 0.06));
+  box-shadow: 0 0 14px rgb(192 160 98 / 0.28);
+}
+.notice-luxe__emblem svg {
+  position: relative;
+}
+.notice-luxe__title {
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--brand-cream);
+}
+.notice-luxe__text {
+  margin-top: 0.15rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+}
+.notice-luxe__close {
+  display: grid;
+  place-items: center;
+  align-self: flex-start;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  border-radius: 0.5rem;
+  color: var(--muted-foreground);
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
+}
+.notice-luxe__close:hover,
+.notice-luxe__close:focus-visible {
+  color: var(--brand-cream);
+  background: rgb(242 237 228 / 0.07);
+  outline: none;
+}
+.notice-luxe__timer {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  transform-origin: left;
+  background: linear-gradient(90deg, rgb(192 160 98 / 0.9), rgb(222 195 135 / 0.95));
+  animation: notice-timer var(--notice-ms, 5500ms) linear forwards;
+}
+.notice-luxe:hover .notice-luxe__timer,
+.notice-luxe:focus-within .notice-luxe__timer {
+  animation-play-state: paused;
+}
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes notice-timer {
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notice-luxe,
+  .notice-luxe::after {
+    animation: none;
+  }
+  /* O filete continua: é ele que fecha o aviso, mas sem a luz e o movimento de entrada. */
+}
+
 /* Acessibilidade: quem prefere menos movimento recebe tudo estático. */
 @media (prefers-reduced-motion: reduce) {
   .reveal,
@@ -567,3 +770,26 @@ input:autofill {
 
 
 
+
+
+
+
+/* Painel da lista de opções (`<Select>`): entra com um leve deslize. */
+.select-luxe[data-state="open"] {
+  animation: select-in 0.16s ease-out;
+}
+@keyframes select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .select-luxe[data-state="open"] {
+    animation: none;
+  }
+}

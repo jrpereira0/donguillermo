@@ -81,12 +81,49 @@ describe("parseOpeningHours", () => {
   });
 });
 
+describe("parseOpeningHours com almoço", () => {
+  const day = { hours_mon_open: "09:00", hours_mon_close: "18:00" };
+  it("lê o almoço quando habilitado", () => {
+    const r = parseOpeningHours(form({ ...day, hours_mon_break_start: "12:00", hours_mon_break_end: "13:00" }), {
+      withBreak: true,
+    });
+    expect(r).toEqual({
+      ok: true,
+      value: { mon: { open: "09:00", close: "18:00", break: { start: "12:00", end: "13:00" } } },
+    });
+  });
+  it("sem almoço preenchido, o dia fica só com abertura e fechamento", () => {
+    expect(parseOpeningHours(form(day), { withBreak: true })).toEqual({
+      ok: true,
+      value: { mon: { open: "09:00", close: "18:00" } },
+    });
+  });
+  it("ignora o almoço quando não habilitado (horário da unidade)", () => {
+    const r = parseOpeningHours(form({ ...day, hours_mon_break_start: "12:00", hours_mon_break_end: "13:00" }));
+    expect(r).toEqual({ ok: true, value: { mon: { open: "09:00", close: "18:00" } } });
+  });
+  it.each([
+    ["só o início", { hours_mon_break_start: "12:00" }],
+    ["horário inválido", { hours_mon_break_start: "25:00", hours_mon_break_end: "26:00" }],
+    ["fim antes do início", { hours_mon_break_start: "13:00", hours_mon_break_end: "12:00" }],
+    ["início igual ao fim", { hours_mon_break_start: "12:00", hours_mon_break_end: "12:00" }],
+    ["começa antes de abrir", { hours_mon_break_start: "08:00", hours_mon_break_end: "09:30" }],
+    ["termina depois de fechar", { hours_mon_break_start: "17:00", hours_mon_break_end: "18:30" }],
+  ])("rejeita almoço: %s", (_n, extra) => {
+    expect(parseOpeningHours(form({ ...day, ...extra }), { withBreak: true }).ok).toBe(false);
+  });
+  it("dia de folga ignora o almoço", () => {
+    const r = parseOpeningHours(form({ hours_mon_closed: "on", hours_mon_break_start: "99:99" }), { withBreak: true });
+    expect(r).toEqual({ ok: true, value: { mon: { closed: true } } });
+  });
+});
+
 describe("hoursToFormDefaults", () => {
   it("ida e volta", () => {
     const d = hoursToFormDefaults({ mon: { open: "09:00", close: "18:00" }, sun: { closed: true } });
-    expect(d.mon).toEqual({ closed: false, open: "09:00", close: "18:00" });
+    expect(d.mon).toEqual({ closed: false, open: "09:00", close: "18:00", breakStart: "", breakEnd: "" });
     expect(d.sun.closed).toBe(true);
-    expect(d.tue).toEqual({ closed: false, open: "", close: "" });
+    expect(d.tue).toEqual({ closed: false, open: "", close: "", breakStart: "", breakEnd: "" });
   });
   it("aceita null/lixo", () => {
     expect(hoursToFormDefaults(null).mon.open).toBe("");

@@ -8,6 +8,7 @@ Sistema multi-unidade para a rede de barbearias Don Guillermo. Este índice cres
 | [arquitetura.md](arquitetura.md) | Visão geral, camadas e diagramas |
 | [modelo-de-dados.md](modelo-de-dados.md) | Diagrama ER, dicionário de dados e funções de autorização |
 | [permissoes-rls.md](permissoes-rls.md) | Matriz de permissões, política de RLS e como é testada |
+| [profissionais.md](profissionais.md) | Cadastro de barbeiros: telas, validações, foto, horários e segurança |
 | [autenticacao.md](autenticacao.md) | Login, recuperação de senha, fluxos e medidas de segurança |
 | [redirecionamento-por-papel.md](redirecionamento-por-papel.md) | Para onde cada papel vai, guardas, barreiras e testes de acesso |
 | [design-tokens.md](design-tokens.md) | Identidade visual (cores, fontes, logo) e como trocá-la |

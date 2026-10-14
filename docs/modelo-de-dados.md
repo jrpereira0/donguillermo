@@ -83,5 +83,10 @@ Todas `SECURITY DEFINER`, `search_path` vazio, baseadas em `auth.uid()`. Não s�
 |---|---|
 | `20261014000100_base_units_profiles_members.sql` | Tipos, tabelas, triggers, funções e RLS |
 | `20261014000200_seed_sao_bernardo_metropole.sql` | Cria a unidade `sao-bernardo-metropole` |
+| `20261014000300_barbers.sql` | Tabela `barbers` (1 por barbeiro e unidade), RLS e privilégios por coluna |
+| `20261014000400_barber_photos_storage.sql` | Bucket `barber-photos` e políticas do Storage |
+| `20261014000500_barber_personal_data.sql` | Nome/sobrenome e endereço (CEP) |
+| `20261014000600_barber_cnpj_phone.sql` | `cpf` vira `cnpj` (14 caracteres, aceita alfanumérico); telefone só com dígitos |
+| `20261014000700_barber_job_title.sql` | Função do profissional (`job_title`), informativa |
 
 Os arquivos seguem o padrão da Supabase CLI (`supabase/migrations/AAAAMMDDHHMMSS_nome.sql`).
