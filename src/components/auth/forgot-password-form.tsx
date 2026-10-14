@@ -23,9 +23,7 @@ export function ForgotPasswordForm() {
   return (
     <form action={formAction} className="flex flex-col gap-[clamp(0.75rem,2.2vh,1.25rem)]" noValidate>
       {state.status === "success" ? (
-        <FormAlert tone="success" title="Solicitação enviada">
-          {state.message}
-        </FormAlert>
+        <FormAlert tone="success">{state.message}</FormAlert>
       ) : null}
       {state.status === "error" && state.message ? (
         <FormAlert key={state.message} tone="error">

@@ -35,8 +35,8 @@ async function LoginContent({ searchParams }: { searchParams: SearchParams }) {
       />
 
       {aviso === "senha-definida" ? (
-        <FormAlert tone="success" title="Senha definida com sucesso">
-          Entre com a nova senha.
+        <FormAlert tone="success">
+          Senha definida com sucesso. Entre com a nova senha.
         </FormAlert>
       ) : null}
       {aviso === "saiu" ? (

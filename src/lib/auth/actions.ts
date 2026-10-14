@@ -111,7 +111,7 @@ export async function requestPasswordResetAction(
   return {
     status: "success",
     message:
-      "Se este e-mail estiver cadastrado, enviamos um link para redefinir a senha. Verifique também o spam.",
+      "Se o e-mail estiver cadastrado, você receberá o link. Confira também o spam.",
   };
 }
 
