@@ -44,11 +44,61 @@ Os componentes shadcn foram ajustados para a identidade (só por tokens):
 - **Input**: fundo `--brand-surface`, borda `--brand-border`, foco dourado, altura 44 px.
 - **Label**: estilo `.label-caps`.
 
+## Padrões de interface ("luxe")
+
+Acabamentos aprovados que valem para o sistema inteiro. Quando precisar de um
+elemento deste tipo, **use o padrão** em vez de criar outro.
+
+### 1. Botão de ação principal: `<Button variant="luxe">`
+
+Degradê dourado, leve elevação no hover, **reflexo de luz que varre o botão** e, se
+quiser, uma seta que desliza. Use para a ação principal da tela ("Entrar", "Salvar",
+"Confirmar", "Finalizar venda"). Uma por tela/formulário.
+
+```tsx
+<Button variant="luxe" size="lg" className="w-full">
+  Entrar
+  <ArrowRight className="transition-transform duration-300 group-hover/button:translate-x-1" />
+</Button>
+```
+
+- Implementação: variante `luxe` em `src/components/ui/button.tsx` + classe `.btn-luxe` em `globals.css`.
+- Ações secundárias continuam em `outline`/`ghost`; `default` é o dourado liso.
+
+### 2. Card de destaque com borda animada: `<LuxeFrame>`
+
+Vidro escuro, moldura em degradê dourado e um **brilho dourado que gira na borda**.
+Use em cards principais (login, resumos importantes), não em todo card da tela.
+
+```tsx
+<LuxeFrame contentClassName="p-8">...conteúdo...</LuxeFrame>
+```
+
+- Implementação: `src/components/ui/luxe-frame.tsx` + classes `.luxe-frame`/`.luxe-card` em `globals.css`.
+- `className` vai na moldura (ex.: `reveal` para a animação de entrada); `contentClassName` no miolo (padding).
+
+### 3. Outros acabamentos (em `globals.css`)
+
+| Classe | Uso |
+|---|---|
+| `.field-luxe` | Campo de texto escuro com brilho dourado ao focar (login) |
+| `.link-luxe` | Link discreto com sublinhado dourado que cresce do centro |
+| `.reveal` + `style={{ "--d": "300ms" }}` | Entrada escalonada (sobe e desfoca → nítido) |
+| `.shake` | Tremida do aviso de erro (já aplicada em `FormAlert tone="error"`) |
+| `OrnamentDivider` | Filete dourado com losango (`src/components/brand/ornament-divider.tsx`) |
+
+### Regras
+
+- **Sem luzes de fundo**: o fundo das telas é liso (`--brand-bg`). Nada de brilhos/orbes atrás do conteúdo.
+- **Login sem rolagem**: o layout de acesso ocupa a altura da janela (`h-dvh`) e dimensiona logo e espaços por `vh`; verificado em 1920×1080, 1366×600, 390×700 e 360×600. Ao criar novos campos nessas telas, mantenha o conteúdo enxuto.
+- **Movimento reduzido**: todas as animações são desligadas para quem usa `prefers-reduced-motion`.
+- Esses acabamentos usam tons derivados do dourado da marca (`rgb(192 160 98 / x)`), definidos em `globals.css`. Se o dourado da marca mudar, ajuste esses valores junto com `--brand-gold`.
+
 ## Como trocar a identidade
 
 1. **Cores**: edite o bloco `:root` em `src/app/globals.css`. Os tokens semânticos do shadcn (`--primary`, `--card`...) apontam para os `--brand-*`, então mudar a marca atualiza tudo.
 2. **Fontes**: edite `src/app/layout.tsx` (troque `Oswald`/`Montserrat`/`Inter`).
-3. **Logo e nome**: coloque o arquivo em `public/brand/` e preencha `logoSrc` em `src/config/brand.ts`.
+3. **Logo e nome**: coloque o arquivo em `public/` e aponte em `src/config/brand.ts`: `logoSquareSrc` (logo quadrado, usado nas telas de acesso, hoje `/logobranco-quadrado.svg`) e `logoSrc` (logo horizontal para o cabeçalho; ainda `null`, o cabeçalho mostra o nome em texto).
 
 Nenhum componente usa cor fixa (hex) diretamente; todos usam tokens.
 

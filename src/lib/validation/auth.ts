@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const email = z
+export const emailField = z
   .string()
   .trim()
   .toLowerCase()
@@ -9,12 +9,12 @@ const email = z
   .email("Informe um e-mail válido.");
 
 export const loginSchema = z.object({
-  email,
+  email: emailField,
   // No login não validamos força: só exigimos que exista (e limitamos o tamanho).
   password: z.string().min(1, "Informe a senha.").max(200),
 });
 
-export const forgotPasswordSchema = z.object({ email });
+export const forgotPasswordSchema = z.object({ email: emailField });
 
 /** Política de senha forte (definição/redefinição de senha). */
 export const strongPassword = z

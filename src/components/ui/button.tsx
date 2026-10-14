@@ -9,6 +9,13 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-gold-hover",
+        /**
+         * PADRÃO DO BOTÃO DE AÇÃO PRINCIPAL: degradê dourado, reflexo que varre no
+         * hover, leve elevação. Use em "Entrar", "Salvar", "Confirmar" etc.
+         * Para ícone de seta que desliza, use `group-hover/button:translate-x-1`.
+         * (ver docs/design-tokens.md > "Padrões de interface")
+         */
+        luxe: "btn-luxe text-[0.8rem] tracking-[0.24em]",
         outline:
           "border-gold/60 bg-surface text-gold hover:border-gold hover:bg-surface-2 aria-expanded:bg-surface-2",
         secondary:

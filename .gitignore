@@ -44,3 +44,6 @@ next-env.d.ts
 # gerados localmente (contêm credenciais de teste / SQL consolidado)
 .dev-credentials.local.md
 supabase/_bundle.sql
+
+# log do servidor de dev rodando em segundo plano
+dev-server.log

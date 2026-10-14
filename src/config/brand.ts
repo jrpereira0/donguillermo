@@ -9,4 +9,6 @@ export const brand = {
   name: "Don Guillermo",
   tagline: "Barbearia",
   logoSrc: null as string | null,
+  /** Logo quadrado (branco, para fundo escuro). Usado nas telas de acesso. */
+  logoSquareSrc: "/logobranco-quadrado.svg" as string | null,
 } as const;

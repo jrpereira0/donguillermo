@@ -47,7 +47,7 @@ flowchart TD
 | `server.ts` | anon + cookie do usuário | Aplicada | Servidor |
 | `admin.ts` | service_role | **Ignorada** | Só servidor, operações administrativas |
 
-Regra: o padrão é sempre `server.ts`. O `admin.ts` só é usado quando a operação realmente precisa passar por cima da RLS (ex.: convidar um usuário), e sempre depois de validar o papel do chamador no servidor.
+Regra: o padrão é sempre `server.ts`. O `admin.ts` só é usado quando a operação realmente precisa passar por cima da RLS (ex.: criar a conta da recepção com a senha definida pelo admin), e sempre depois de validar o papel do chamador no servidor.
 
 ## Observações do Next.js 16
 

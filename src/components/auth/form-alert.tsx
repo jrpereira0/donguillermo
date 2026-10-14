@@ -13,7 +13,7 @@ export function FormAlert({ tone, children, className }: Props) {
       role={tone === "error" ? "alert" : "status"}
       className={cn(
         "rounded-lg border px-3 py-2.5 text-sm",
-        tone === "error" && "border-destructive/50 bg-destructive/10 text-destructive",
+        tone === "error" && "shake border-destructive/50 bg-destructive/10 text-destructive",
         tone === "success" && "border-success/50 bg-success/10 text-success",
         tone === "info" && "border-border bg-surface-2 text-foreground",
         className,

@@ -127,6 +127,61 @@
   }
 }
 
+/*
+ * Campos e seleção no padrão da marca (em vez do azul/amarelo do navegador).
+ * O navegador desenha a LISTA de sugestões por conta própria; com
+ * `color-scheme: dark` ela já vem escura. Aqui tratamos o campo preenchido
+ * automaticamente e a seleção de texto.
+ */
+/*
+ * Esconde os botões nativos do navegador dentro dos campos (o "olho" do Edge e
+ * o "x" de limpar): o sistema usa o próprio botão mostrar/ocultar senha. Sem
+ * isso, o Edge mostra dois olhos sobrepostos e o nativo pode interceptar o clique.
+ */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+input::-webkit-credentials-auto-fill-button,
+input::-webkit-contacts-auto-fill-button {
+  visibility: hidden;
+  display: none !important;
+  pointer-events: none;
+}
+
+::selection {
+  background: rgb(192 160 98 / 0.38);
+  color: var(--brand-cream);
+}
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--brand-cream);
+  caret-color: var(--brand-cream);
+  /* "tinta" por cima do fundo claro que o navegador aplica */
+  -webkit-box-shadow: 0 0 0 1000px #171717 inset;
+  box-shadow: 0 0 0 1000px #171717 inset;
+  transition: background-color 9999s ease-out 0s;
+}
+input:-webkit-autofill:focus-visible {
+  border-color: var(--brand-gold);
+  -webkit-box-shadow:
+    0 0 0 1000px #171717 inset,
+    0 0 0 3px rgb(192 160 98 / 0.16);
+  box-shadow:
+    0 0 0 1000px #171717 inset,
+    0 0 0 3px rgb(192 160 98 / 0.16);
+}
+/* Firefox/Chrome modernos: preenchido automaticamente */
+input:autofill {
+  -webkit-text-fill-color: var(--brand-cream);
+  caret-color: var(--brand-cream);
+  box-shadow: 0 0 0 1000px #171717 inset;
+}
+
 @layer components {
   /* Rótulo em caixa alta com espaçamento largo (ex.: "COMISSÃO DO MÊS") */
   .label-caps {
@@ -137,3 +192,326 @@
     @apply font-heading font-bold leading-none text-foreground;
   }
 }
+
+/* ==========================================================================
+ * Telas de acesso: palco, animações e acabamentos "luxo".
+ * Só CSS (sem bibliotecas). Tudo respeita prefers-reduced-motion (ver final).
+ * ========================================================================== */
+
+/* Ângulo animável: permite girar o brilho dourado na borda do card. */
+@property --luxe-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes luxe-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes luxe-logo-in {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+/* Desliza exatamente 1 "azulejo" (72px): o loop é contínuo, sem pulo. */
+@keyframes luxe-drift {
+  to {
+    background-position: 72px 72px;
+  }
+}
+@keyframes luxe-spin {
+  to {
+    --luxe-angle: 360deg;
+  }
+}
+@keyframes luxe-sweep {
+  from {
+    transform: translateX(-130%) skewX(-18deg);
+  }
+  to {
+    transform: translateX(230%) skewX(-18deg);
+  }
+}
+@keyframes luxe-line-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes luxe-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+@keyframes luxe-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@layer components {
+  /* Entrada escalonada: defina o atraso com style={{ "--d": "200ms" }} */
+  .reveal {
+    opacity: 0;
+    animation: luxe-reveal 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+    animation-delay: var(--d, 0ms);
+  }
+
+  /*
+   * Palco: fundo escuro com textura, SEM luzes/brilhos.
+   * ::before = trama art déco de losangos dourados finíssimos (some no centro,
+   *            para não competir com o card, e desliza bem devagar).
+   * ::after  = grão sutil de filme, dá profundidade ao preto.
+   */
+  .auth-stage {
+    background: var(--brand-bg);
+  }
+  .auth-stage::before,
+  .auth-stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .auth-stage::before {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72' fill='none' stroke='%23c0a062' stroke-width='1'><path d='M36 0 72 36 36 72 0 36Z'/><path d='M36 14 58 36 36 58 14 36Z' opacity='.55'/><circle cx='36' cy='36' r='1.6' fill='%23c0a062' stroke='none'/></svg>");
+    background-size: 72px 72px;
+    opacity: 0.1;
+    -webkit-mask-image: radial-gradient(ellipse 65% 65% at 50% 50%, transparent 20%, #000 100%);
+    mask-image: radial-gradient(ellipse 65% 65% at 50% 50%, transparent 20%, #000 100%);
+    animation: luxe-drift 90s linear infinite;
+  }
+  .auth-stage::after {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    opacity: 0.07;
+  }
+  /* Logo: só a entrada suave (sem brilho de fundo) */
+  .logo-intro {
+    animation: luxe-logo-in 1.2s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  /* Card: moldura em degradê dourado + brilho que gira na borda */
+  .luxe-frame {
+    position: relative;
+    padding: 1px;
+    border-radius: 1.125rem;
+    background: linear-gradient(
+      180deg,
+      rgb(192 160 98 / 0.5),
+      rgb(69 68 67 / 0.65) 38%,
+      rgb(69 68 67 / 0.25)
+    );
+    box-shadow: 0 40px 90px -40px rgb(0 0 0 / 0.95);
+  }
+  .luxe-frame::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: conic-gradient(
+      from var(--luxe-angle),
+      transparent 0deg 300deg,
+      rgb(222 195 135 / 0.95) 338deg,
+      transparent 360deg
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box exclude,
+      linear-gradient(#000 0 0);
+    animation: luxe-spin 9s linear infinite;
+    pointer-events: none;
+  }
+  .luxe-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: calc(1.125rem - 1px);
+    background: linear-gradient(180deg, rgb(38 38 38 / 0.9), rgb(22 22 22 / 0.94));
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    box-shadow: inset 0 1px 0 rgb(242 237 228 / 0.07);
+  }
+  /* Fio de luz no topo do card */
+  .luxe-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 12%;
+    right: 12%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(222 195 135 / 0.85), transparent);
+    transform-origin: center;
+    animation: luxe-line-grow 1.4s 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  /* Botão principal: degradê dourado + reflexo que varre ao passar o mouse */
+  .btn-luxe {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    color: #14110b;
+    border-color: rgb(222 195 135 / 0.5);
+    background: linear-gradient(135deg, #dcc48d 0%, #c0a062 48%, #a98746 100%);
+    box-shadow:
+      0 12px 30px -12px rgb(192 160 98 / 0.65),
+      inset 0 1px 0 rgb(255 255 255 / 0.35);
+    transition:
+      transform 0.25s ease,
+      box-shadow 0.25s ease,
+      filter 0.25s ease;
+  }
+  .btn-luxe::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 38%;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+    transform: translateX(-130%) skewX(-18deg);
+    pointer-events: none;
+  }
+  .btn-luxe:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.06);
+    box-shadow:
+      0 18px 36px -12px rgb(192 160 98 / 0.8),
+      inset 0 1px 0 rgb(255 255 255 / 0.45);
+  }
+  .btn-luxe:hover:not(:disabled)::after {
+    animation: luxe-sweep 0.9s ease;
+  }
+  .btn-luxe:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  /* Link discreto com sublinhado dourado que cresce do centro */
+  .link-luxe {
+    position: relative;
+    transition: color 0.25s ease;
+  }
+  .link-luxe::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0.1rem;
+    height: 1px;
+    background: var(--brand-gold);
+    transform: scaleX(0);
+    transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .link-luxe:hover,
+  .link-luxe:focus-visible {
+    color: var(--brand-gold);
+  }
+  .link-luxe:hover::after,
+  .link-luxe:focus-visible::after {
+    transform: scaleX(1);
+  }
+
+  .shake {
+    animation: luxe-shake 0.45s ease;
+  }
+  .skeleton-luxe {
+    border-radius: 0.5rem;
+    background: rgb(242 237 228 / 0.08);
+    animation: luxe-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+/*
+ * PADRÃO DE CAMPO (`.field-luxe`): fundo escuro profundo; ao focar, borda dourada
+ * fina de 1px + um halo suave de 3px (sem brilho/luz espalhada).
+ * Fica FORA de @layer de propósito: CSS sem camada vence as utilities do Tailwind
+ * (bg-surface, ring-*, border-input) que o componente Input já traz.
+ */
+.field-luxe {
+  background-color: rgb(8 8 8 / 0.5);
+  border-color: #454443;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    background-color 0.25s ease;
+}
+.field-luxe:hover:not(:focus) {
+  border-color: rgb(192 160 98 / 0.45);
+}
+.field-luxe:focus,
+.field-luxe:focus-visible {
+  outline: none;
+  border-color: var(--brand-gold);
+  background-color: rgb(8 8 8 / 0.72);
+  box-shadow: 0 0 0 3px rgb(192 160 98 / 0.14);
+}
+.field-luxe[aria-invalid="true"] {
+  border-color: rgb(229 96 77 / 0.7);
+}
+.field-luxe[aria-invalid="true"]:focus {
+  border-color: var(--brand-danger);
+  box-shadow: 0 0 0 3px rgb(229 96 77 / 0.16);
+}
+
+/* Acessibilidade: quem prefere menos movimento recebe tudo estático. */
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .logo-intro {
+    animation: none;
+    opacity: 1;
+    filter: none;
+  }
+  .auth-stage::before,
+  .luxe-frame::before,
+  .luxe-card::before,
+  .skeleton-luxe,
+  .shake {
+    animation: none;
+  }
+  .btn-luxe,
+  .btn-luxe:hover:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
+  .btn-luxe:hover:not(:disabled)::after {
+    animation: none;
+  }
+}
+
+

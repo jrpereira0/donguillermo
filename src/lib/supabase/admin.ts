@@ -4,7 +4,7 @@ import { getPublicEnv } from "@/lib/env";
 
 /**
  * Cliente com a service_role: IGNORA a RLS. Uso restrito ao servidor e a
- * operações administrativas (ex.: convidar usuários na Etapa 5).
+ * operações administrativas (ex.: criar contas de recepção na Etapa 5).
  * Nunca importe em Client Components — `server-only` quebra o build se isso ocorrer.
  */
 export function createAdminClient() {

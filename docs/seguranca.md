@@ -31,7 +31,7 @@ Medidas de proteção do login e da recuperação de senha (limite de tentativas
 - Isolamento por unidade na **RLS**, não só na API.
 - O redirecionamento e a autorização são decididos **no servidor**; o navegador nunca é a única barreira.
 - Erros de login genéricos (não revelam se o e-mail existe).
-- Usuários não se cadastram sozinhos; são convidados.
+- Usuários não se cadastram sozinhos; as contas são criadas pelo administrador (que define a senha inicial).
 
 ## Dependências
 
