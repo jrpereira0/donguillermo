@@ -1,0 +1,139 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * Identidade visual Don Guillermo — extraída da referência enviada.
+ * TODA a identidade vive nos tokens abaixo. Para trocar cores/fontes/logo,
+ * altere somente este bloco e src/config/brand.ts (ver docs/design-tokens.md).
+ */
+:root {
+  /* Marca (valores brutos) */
+  --brand-bg: #101010;
+  --brand-surface: #242424;
+  --brand-surface-2: #343433;
+  --brand-border: #454443;
+  --brand-gold: #c0a062;
+  --brand-gold-hover: #cdb078;
+  --brand-cream: #f2ede4;
+  --brand-muted: #a3a19e;
+  --brand-danger: #e5604d;
+  --brand-success: #8fbf6a;
+
+  /* Semânticos (shadcn/ui) apontando para a marca */
+  --background: var(--brand-bg);
+  --foreground: var(--brand-cream);
+  --card: var(--brand-surface);
+  --card-foreground: var(--brand-cream);
+  --popover: var(--brand-surface);
+  --popover-foreground: var(--brand-cream);
+  --primary: var(--brand-gold);
+  --primary-foreground: var(--brand-bg);
+  --secondary: var(--brand-surface);
+  --secondary-foreground: var(--brand-cream);
+  --muted: var(--brand-surface);
+  --muted-foreground: var(--brand-muted);
+  --accent: var(--brand-surface-2);
+  --accent-foreground: var(--brand-cream);
+  --destructive: var(--brand-danger);
+  --border: var(--brand-border);
+  --input: var(--brand-border);
+  --ring: var(--brand-gold);
+  --chart-1: var(--brand-gold);
+  --chart-2: var(--brand-cream);
+  --chart-3: var(--brand-muted);
+  --chart-4: var(--brand-border);
+  --chart-5: var(--brand-surface-2);
+  --radius: 0.375rem;
+  --sidebar: var(--brand-surface);
+  --sidebar-foreground: var(--brand-cream);
+  --sidebar-primary: var(--brand-gold);
+  --sidebar-primary-foreground: var(--brand-bg);
+  --sidebar-accent: var(--brand-surface-2);
+  --sidebar-accent-foreground: var(--brand-cream);
+  --sidebar-border: var(--brand-border);
+  --sidebar-ring: var(--brand-gold);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-gold: var(--brand-gold);
+  --color-gold-hover: var(--brand-gold-hover);
+  --color-cream: var(--brand-cream);
+  --color-surface: var(--brand-surface);
+  --color-surface-2: var(--brand-surface-2);
+  --color-success: var(--brand-success);
+
+  /* Tipografia: Inter (corpo), Oswald (títulos), Montserrat (rótulos) */
+  --font-sans: var(--font-inter);
+  --font-heading: var(--font-oswald);
+  --font-label: var(--font-montserrat);
+  --font-mono: var(--font-geist-mono);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-heading font-bold uppercase tracking-wide;
+  }
+}
+
+@layer components {
+  /* Rótulo em caixa alta com espaçamento largo (ex.: "COMISSÃO DO MÊS") */
+  .label-caps {
+    @apply font-label text-xs font-normal uppercase tracking-[0.2em] text-muted-foreground;
+  }
+  /* Número/valor de destaque (ex.: "R$ 5.780") */
+  .display-number {
+    @apply font-heading font-bold leading-none text-foreground;
+  }
+}
