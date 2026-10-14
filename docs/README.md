@@ -18,7 +18,7 @@ Sistema multi-unidade para a rede de barbearias Don Guillermo. Este índice cres
 | Etapa | Descrição | Status |
 |---|---|---|
 | 1 | Fundação local | Concluída |
-| 2 | Banco base (unidades, perfis, papéis, RLS) | Código pronto e testado offline; aguardando aplicar no Supabase |
+| 2 | Banco base (unidades, perfis, papéis, RLS) | Concluída (aplicada no Supabase; 30/30 testes de RLS) |
 | 3 | Tela de login | Pendente |
 | 4 | Redirecionamento por papel | Pendente |
 | 5 | Painel admin | Pendente |
