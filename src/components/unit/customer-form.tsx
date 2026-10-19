@@ -16,6 +16,7 @@ import {
   Settings2,
   UserRound,
 } from "lucide-react";
+import { AgendaDateField } from "@/components/agenda/mini-calendar";
 import { FormAlert } from "@/components/auth/form-alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -174,6 +175,8 @@ export function CustomerForm({ slug, customerId, defaults, mode, editNotes, edit
 
   // Origem e consentimento: controlados (o Select vira campo oculto e o Switch um checkbox no envio).
   const [referral, setReferral] = useState(val("referralSource") || NONE);
+  const [birth, setBirth] = useState(val("birthDate"));
+  const todaySP = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
   const [consent, setConsent] = useState(
     state.values ? state.values.marketingConsent === "on" : defaults.marketingConsent,
   );
@@ -295,7 +298,7 @@ export function CustomerForm({ slug, customerId, defaults, mode, editNotes, edit
                   />
                 </Field>
                 <Field id="birthDate" label="Data de nascimento" error={fe.birthDate}>
-                  <Input id="birthDate" name="birthDate" type="date" className="field-luxe" defaultValue={val("birthDate")} aria-invalid={!!fe.birthDate} />
+                  <AgendaDateField id="birthDate" name="birthDate" value={birth} today={todaySP} onChange={setBirth} invalid={!!fe.birthDate} />
                 </Field>
                 <Field id="cpf" label="CPF" error={cpfErr} hint="Opcional. Não pode repetir na rede.">
                   <IconInput

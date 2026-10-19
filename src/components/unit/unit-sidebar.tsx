@@ -10,6 +10,7 @@ import {
   LogOut,
   Menu,
   Package,
+  Percent,
   Scissors,
   Settings,
   Users,
@@ -29,6 +30,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   servicos: Scissors,
   produtos: Package,
   caixa: Wallet,
+  comissoes: Percent,
   configuracoes: Settings,
 };
 
@@ -59,10 +61,10 @@ export function UnitSidebar({ items, unitName, email, logoSrc, brandName, backHr
   }, [open]);
 
   const panel = (
-    <div className="flex h-full flex-col gap-6 px-4 py-6">
-      <div className="flex flex-col items-center gap-3 text-center">
+    <div className="flex h-full flex-col gap-4 px-4 py-5">
+      <div className="flex flex-col items-center gap-2.5 text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        {logoSrc ? <img src={logoSrc} alt={brandName} className="h-16 w-auto" /> : null}
+        {logoSrc ? <img src={logoSrc} alt={brandName} className="h-12 w-auto" /> : null}
         <div>
           <p className="label-caps text-gold">Unidade</p>
           <p className="mt-1 font-heading text-sm font-semibold uppercase leading-tight tracking-wide">
@@ -72,21 +74,34 @@ export function UnitSidebar({ items, unitName, email, logoSrc, brandName, backHr
         <OrnamentDivider className="w-28" />
       </div>
 
-      <nav aria-label="Menu da unidade" className="flex flex-1 flex-col gap-1 overflow-y-auto">
-        {items.map((item) => {
+      <nav aria-label="Menu da unidade" className="flex flex-1 flex-col gap-0.5">
+        {items.map((item, i) => {
           const Icon = ICONS[item.icon];
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const newGroup = i === 0 || items[i - 1]!.group !== item.group;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              data-active={active}
-              aria-current={active ? "page" : undefined}
-              className="nav-luxe flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground"
-            >
-              <Icon className="size-4 shrink-0 transition-colors" />
-              {item.label}
-            </Link>
+            <span key={item.href} className="contents">
+              {newGroup ? (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "label-caps block px-3 pb-0.5 text-[0.58rem] text-muted-foreground/60",
+                    i === 0 ? "pt-0" : "pt-3",
+                  )}
+                >
+                  {item.group}
+                </span>
+              ) : null}
+              <Link
+                href={item.href}
+                data-active={active}
+                aria-current={active ? "page" : undefined}
+                className="nav-luxe flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground"
+              >
+                <Icon className="size-4 shrink-0 transition-colors" />
+                {item.label}
+              </Link>
+            </span>
           );
         })}
       </nav>

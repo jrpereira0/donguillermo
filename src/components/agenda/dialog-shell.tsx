@@ -5,9 +5,8 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** Scrollbar discreta — só no corpo do modal, nunca aninhada. */
-const SCROLL =
-  "[scrollbar-gutter:stable] [scrollbar-width:thin] [scrollbar-color:rgb(192_160_98/0.28)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gold/25 hover:[&::-webkit-scrollbar-thumb]:bg-gold/40";
+/** Scrollbar da marca (`.scroll-luxe`) — só no corpo do modal, nunca aninhada. */
+const SCROLL = "scroll-luxe";
 
 /**
  * Janela modal da agenda, no visual da marca. Não usa `<dialog>.showModal()`: a camada
@@ -25,6 +24,7 @@ export function DialogShell({
   eyebrow,
   onClose,
   wide,
+  size,
   busy,
   children,
 }: {
@@ -32,6 +32,8 @@ export function DialogShell({
   eyebrow?: string;
   onClose: () => void;
   wide?: boolean;
+  /** md 28rem · lg 42rem · xl 64rem (comanda). */
+  size?: "md" | "lg" | "xl";
   busy?: boolean;
   children: React.ReactNode;
 }) {
@@ -82,7 +84,11 @@ export function DialogShell({
         className={cn(
           "flex max-h-[96dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-gold/35 bg-[#1a1a1a] text-foreground shadow-[0_40px_100px_-24px_rgb(0_0_0/0.95)] outline-none sm:my-auto sm:max-h-[90dvh] sm:w-[min(94vw,var(--dialog-w))] sm:rounded-2xl",
         )}
-        style={{ "--dialog-w": wide ? "42rem" : "28rem" } as React.CSSProperties}
+        style={
+          {
+            "--dialog-w": size === "xl" ? "64rem" : size === "lg" || wide ? "42rem" : size === "md" ? "28rem" : wide ? "42rem" : "28rem",
+          } as React.CSSProperties
+        }
       >
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border/80 bg-gradient-to-b from-[#242424] to-[#1a1a1a] px-5 py-4 sm:px-6">
           <div className="min-w-0">
@@ -108,10 +114,25 @@ export function DialogShell({
   );
 }
 
-/** Corpo único rolável do modal (sem scroll aninhado nas listas). */
-export function DialogBody({ children, className }: { children: React.ReactNode; className?: string }) {
+/** Corpo do modal. Com `scroll`, a rolagem fica só aqui — nunca aninhada nas listas. */
+export function DialogBody({
+  children,
+  className,
+  scroll = true,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  scroll?: boolean;
+}) {
   return (
-    <div className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6 sm:py-6", SCROLL, className)}>
+    <div
+      className={cn(
+        "min-h-0 flex-1 px-5 py-5 sm:px-6 sm:py-6",
+        scroll && "overflow-y-auto overscroll-contain",
+        scroll && SCROLL,
+        className,
+      )}
+    >
       {children}
     </div>
   );

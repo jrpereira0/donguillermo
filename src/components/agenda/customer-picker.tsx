@@ -263,7 +263,7 @@ export function CustomerPicker({ slug, value, onChange, errors, disabled }: Prop
               </div>
 
               {hits.length > 0 ? (
-                <ul className="flex max-h-56 flex-col overflow-y-auto rounded-xl border border-border bg-[#0b0b0b]/60 p-1" aria-label="Clientes encontrados">
+                <ul className="scroll-luxe flex max-h-56 flex-col overflow-y-auto rounded-xl border border-border bg-[#0b0b0b]/60 p-1" aria-label="Clientes encontrados">
                   {hits.map((h) => (
                     <li key={h.id}>
                       <button

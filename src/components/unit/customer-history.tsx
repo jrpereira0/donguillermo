@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Building2, CalendarClock, Receipt, ReceiptText, TrendingUp, Wallet } from "lucide-react";
 import { LuxeFrame } from "@/components/ui/luxe-frame";
 import type { CustomerHistoryEntry } from "@/lib/customers/types";
@@ -46,9 +47,9 @@ function Stat({ icon: Icon, label, value }: { icon: typeof Receipt; label: strin
 /**
  * Aba "Histórico": resumo e lista de comandas do cliente em TODAS as unidades da rede;
  * cada comanda mostra a unidade onde aconteceu. As comandas ainda não existem: com a lista
- * vazia aparece o estado "Nenhuma comanda ainda" e, quando o módulo chegar, basta alimentar `entries`.
+ * vazia aparece o estado "Nenhuma comanda ainda".
  */
-export function CustomerHistory({ entries }: { entries: CustomerHistoryEntry[] }) {
+export function CustomerHistory({ entries, slug }: { entries: CustomerHistoryEntry[]; slug: string }) {
   const s = summarize(entries);
 
   return (
@@ -78,7 +79,13 @@ export function CustomerHistory({ entries }: { entries: CustomerHistoryEntry[] }
             {entries.map((e) => (
               <li key={e.id} className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 px-4 py-4">
                 <div className="flex min-w-0 flex-col gap-1">
-                  <p className="font-heading text-base uppercase tracking-wide">{dateTime.format(new Date(e.openedAt))}</p>
+                  {e.unitSlug === slug ? (
+                    <Link href={`/u/${slug}/caixa/comanda/${e.id}`} className="font-heading text-base uppercase tracking-wide text-gold hover:underline">
+                      {dateTime.format(new Date(e.openedAt))}
+                    </Link>
+                  ) : (
+                    <p className="font-heading text-base uppercase tracking-wide">{dateTime.format(new Date(e.openedAt))}</p>
+                  )}
                   <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Building2 className="size-3.5 shrink-0 text-gold/80" aria-hidden="true" />
                     {e.unitName}

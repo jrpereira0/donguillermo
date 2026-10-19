@@ -96,7 +96,7 @@ export default async function EditarClientePage({ params }: { params: Promise<{ 
         customerId={customer.id}
         defaults={toDefaults(customer)}
         editNotes={<CustomerNotes slug={slug} customerId={customer.id} notes={notes} />}
-        editHistory={<CustomerHistory entries={history} />}
+        editHistory={<CustomerHistory slug={slug} entries={history} />}
         editStatus={editStatus}
       />
     </div>

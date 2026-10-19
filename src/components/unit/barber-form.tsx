@@ -20,6 +20,7 @@ import {
   UserRound,
   type LucideIcon,
 } from "lucide-react";
+import { AgendaDateField } from "@/components/agenda/mini-calendar";
 import { FormAlert } from "@/components/auth/form-alert";
 import { HoursFields } from "@/components/admin/hours-fields";
 import { PasswordFields } from "@/components/admin/password-fields";
@@ -185,6 +186,8 @@ export function BarberForm({ slug, unitId, barberId, defaults, services, mode, e
   }
 
   const [jobTitle, setJobTitle] = useState(val("jobTitle") || "barbeiro");
+  const [birth, setBirth] = useState(val("birthDate"));
+  const todaySP = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 
   // Telefone e CNPJ: máscara enquanto digita e aviso de erro ao sair do campo.
   const [masked, setMasked] = useState({
@@ -309,7 +312,7 @@ export function BarberForm({ slug, unitId, barberId, defaults, services, mode, e
                   />
                 </Field>
                 <Field id="birthDate" label="Data de nascimento" error={fe.birthDate}>
-                  <Input id="birthDate" name="birthDate" type="date" className="field-luxe" defaultValue={val("birthDate")} aria-invalid={!!fe.birthDate} />
+                  <AgendaDateField id="birthDate" name="birthDate" value={birth} today={todaySP} onChange={setBirth} invalid={!!fe.birthDate} />
                 </Field>
                 <Field id="phone" label="Telefone" error={phoneErr}>
                   <Input

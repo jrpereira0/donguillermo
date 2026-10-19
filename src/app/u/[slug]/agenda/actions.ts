@@ -234,6 +234,7 @@ export async function saveAppointmentAction(
   }
 
   revalidatePath(`/u/${unit.slug}/agenda`);
+  revalidatePath(`/u/${unit.slug}/caixa`);
   return {
     status: "success",
     message: appointmentId ? "Agendamento atualizado." : "Agendamento criado.",
@@ -364,6 +365,7 @@ export async function moveAppointmentAction(
   }
 
   revalidatePath(`/u/${unit.slug}/agenda`);
+  revalidatePath(`/u/${unit.slug}/caixa`);
   const outside = outsideHoursReason({
     unitHours: settings?.opening_hours,
     barberHours: barber.work_hours,
@@ -413,6 +415,7 @@ export async function setAppointmentStatusAction(slug: string, id: string, to: s
   if (!data?.length) return fail("O agendamento mudou enquanto você olhava. Atualize a tela e tente de novo.");
 
   revalidatePath(`/u/${unit.slug}/agenda`);
+  revalidatePath(`/u/${unit.slug}/caixa`);
   const message =
     to === "cancelado"
       ? "Agendamento cancelado. Horário liberado."

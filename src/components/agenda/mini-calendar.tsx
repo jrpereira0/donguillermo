@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { addDays, isIsoDate, shortDateLabel } from "@/lib/agenda/time";
 import { cn } from "@/lib/utils";
 
@@ -81,6 +81,10 @@ export function MiniCalendar(props: Props) {
     setBrowse({ y: d.getUTCFullYear(), m: d.getUTCMonth(), forDate: selected });
   }
 
+  function shiftYear(delta: number) {
+    setBrowse({ y: cursor.y + delta, m: cursor.m, forDate: selected });
+  }
+
   function pick(iso: string) {
     if ("onSelect" in props && props.onSelect) props.onSelect(iso);
     onDaySelect?.(iso);
@@ -105,26 +109,46 @@ export function MiniCalendar(props: Props) {
         className,
       )}
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => shiftMonth(-1)}
-          aria-label="Mês anterior"
-          className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-gold"
-        >
-          <ChevronLeft className="size-4" />
-        </button>
+      <div className="mb-3 flex items-center justify-between gap-1">
+        <span className="flex items-center">
+          <button
+            type="button"
+            onClick={() => shiftYear(-1)}
+            aria-label="Ano anterior"
+            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-gold"
+          >
+            <ChevronsLeft className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => shiftMonth(-1)}
+            aria-label="Mês anterior"
+            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-gold"
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+        </span>
         <p className="font-heading text-sm font-semibold uppercase tracking-wide">
           {capitalize(monthTitle(cursor.y, cursor.m))}
         </p>
-        <button
-          type="button"
-          onClick={() => shiftMonth(1)}
-          aria-label="Próximo mês"
-          className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-gold"
-        >
-          <ChevronRight className="size-4" />
-        </button>
+        <span className="flex items-center">
+          <button
+            type="button"
+            onClick={() => shiftMonth(1)}
+            aria-label="Próximo mês"
+            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-gold"
+          >
+            <ChevronRight className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => shiftYear(1)}
+            aria-label="Próximo ano"
+            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-gold"
+          >
+            <ChevronsRight className="size-4" />
+          </button>
+        </span>
       </div>
 
       <div className="mb-1 grid grid-cols-7 gap-0.5">
@@ -178,6 +202,8 @@ export function AgendaDateField({
   onChange,
   invalid,
   disabled,
+  compact,
+  prefix,
 }: {
   id?: string;
   name?: string;
@@ -186,6 +212,10 @@ export function AgendaDateField({
   onChange: (iso: string) => void;
   invalid?: boolean;
   disabled?: boolean;
+  /** Altura reduzida (filtros e barras compactas). */
+  compact?: boolean;
+  /** Rótulo curto dentro do campo (ex.: "De", "Até" em filtros de período). */
+  prefix?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [box, setBox] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -248,13 +278,21 @@ export function AgendaDateField({
         aria-invalid={invalid || undefined}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "field-luxe flex h-11 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 text-left text-base outline-none transition-colors md:text-sm",
+          "field-luxe flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border text-left outline-none transition-colors",
+          compact ? "h-9 px-2.5 text-[0.83rem]" : "h-11 px-3 text-base md:text-sm",
           invalid ? "border-destructive" : open ? "border-gold/55" : "border-input hover:border-gold/40",
           disabled && "cursor-not-allowed opacity-60",
         )}
       >
-        <span className="tabular-nums">{isIsoDate(value) ? shortDateLabel(value) : "Escolha a data"}</span>
-        <CalendarDays className="size-4 shrink-0 text-gold/80" aria-hidden="true" />
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          {prefix ? (
+            <span className="label-caps shrink-0 text-[0.55rem] text-muted-foreground">{prefix}</span>
+          ) : null}
+          <span className="truncate tabular-nums">
+            {isIsoDate(value) ? shortDateLabel(value) : compact ? "Selecione" : "Escolha a data"}
+          </span>
+        </span>
+        <CalendarDays className={cn("shrink-0 text-gold/80", compact ? "size-3.5" : "size-4")} aria-hidden="true" />
       </button>
       {open && box
         ? createPortal(

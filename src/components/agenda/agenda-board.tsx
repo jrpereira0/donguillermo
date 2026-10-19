@@ -6,6 +6,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { createPortal } from "react-dom";
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Lock, Plus, Users } from "lucide-react";
 import { moveAppointmentAction, setAppointmentStatusAction } from "@/app/u/[slug]/agenda/actions";
+import { loadComandaAction, type ComandaLoad } from "@/app/u/[slug]/caixa/actions";
+import { ComandaDialog } from "@/components/caixa/comanda-dialog";
 import { Notice } from "@/components/ui/notice";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { BarberAvatar } from "@/components/unit/barber-avatar";
@@ -133,6 +135,8 @@ export function AgendaBoard({
   const router = useRouter();
   const calBtn = useRef<HTMLButtonElement>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [comanda, setComanda] = useState<Extract<ComandaLoad, { ok: true }> | null>(null);
+  const [openingComanda, startComanda] = useTransition();
   const [notice, setNotice] = useState<string | null>(null);
   const [nowMin, setNowMin] = useState<number | null>(null);
   const [calOpen, setCalOpen] = useState(false);
@@ -287,6 +291,48 @@ export function AgendaBoard({
     router.refresh();
   }, [router]);
   const close = useCallback(() => setDialog(null), []);
+  const openComanda = useCallback(
+    (appointmentId: string) => {
+      setDialog(null);
+      startComanda(async () => {
+        const r = await loadComandaAction(slug, appointmentId);
+        if (!r.ok) setNotice(r.message);
+        else setComanda(r);
+      });
+    },
+    [slug],
+  );
+  const charged = useCallback(
+    (message: string) => {
+      setComanda(null);
+      setNotice(message);
+      router.refresh();
+    },
+    [router],
+  );
+  const savedComanda = useCallback(
+    (message: string) => {
+      setNotice(message);
+      router.refresh();
+    },
+    [router],
+  );
+  const reopenedComanda = useCallback(
+    (appointmentId: string | null, message: string) => {
+      setNotice(message);
+      router.refresh();
+      if (!appointmentId) {
+        setComanda(null);
+        return;
+      }
+      startComanda(async () => {
+        const r = await loadComandaAction(slug, appointmentId);
+        if (r.ok) setComanda(r);
+        else setComanda(null);
+      });
+    },
+    [router, slug],
+  );
 
   const openStatusMenu = useCallback((entry: AgendaEntry, e: React.MouseEvent) => {
     if (entry.kind !== "appointment") return;
@@ -865,6 +911,27 @@ export function AgendaBoard({
           onClose={close}
           onDone={done}
           onRefresh={refreshAgenda}
+          onCharge={openComanda}
+        />
+      ) : null}
+      {openingComanda ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
+          <p className="rounded-xl border border-gold/30 bg-[#1a1a1a] px-5 py-4 text-sm text-cream">Abrindo comanda…</p>
+        </div>
+      ) : null}
+      {comanda ? (
+        <ComandaDialog
+          slug={slug}
+          ticket={comanda.ticket}
+          services={comanda.services}
+          products={comanda.products}
+          barbers={comanda.barbers}
+          registerOpen={comanda.registerOpen}
+          registerDay={comanda.registerDay}
+          onClose={() => setComanda(null)}
+          onCharged={charged}
+          onSaved={savedComanda}
+          onReopened={(message) => reopenedComanda(comanda.ticket.appointmentId, message)}
         />
       ) : null}
       {dialog?.type === "block" ? (
@@ -1188,7 +1255,7 @@ function BarberVisibilityFilter({
                 </header>
 
                 <ul
-                  className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain px-2 py-2 [scrollbar-width:thin]"
+                  className="scroll-luxe min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-2"
                   style={{ maxHeight: Math.max(120, box.maxHeight - 150) }}
                 >
                   {barbers.map((b) => {
@@ -1306,6 +1373,26 @@ function EntryCard({
 
   const [tipBox, setTipBox] = useState<{ left: number; top: number } | null>(null);
   const cardRef = useRef<HTMLButtonElement>(null);
+  const tipTimer = useRef<number | null>(null);
+
+  // Hover com intenção: o detalhe só abre se o mouse ficar sobre o card.
+  function hideTip() {
+    if (tipTimer.current !== null) window.clearTimeout(tipTimer.current);
+    tipTimer.current = null;
+    setTipBox(null);
+  }
+
+  function planTip() {
+    if (tipTimer.current !== null) window.clearTimeout(tipTimer.current);
+    tipTimer.current = window.setTimeout(showTip, 400);
+  }
+
+  useEffect(
+    () => () => {
+      if (tipTimer.current !== null) window.clearTimeout(tipTimer.current);
+    },
+    [],
+  );
 
   function showTip() {
     const el = cardRef.current;
@@ -1328,21 +1415,38 @@ function EntryCard({
         data-agenda-card
         aria-label={label}
         onMouseEnter={() => {
-          if (!dragging) showTip();
+          if (!dragging) planTip();
         }}
-        onMouseLeave={() => setTipBox(null)}
-        onFocus={showTip}
-        onBlur={() => setTipBox(null)}
+        onMouseLeave={hideTip}
+        onFocus={(e) => {
+          // Mouse clicando também foca o botão: detalhe no foco só pelo teclado.
+          if (e.currentTarget.matches(":focus-visible")) showTip();
+        }}
+        onBlur={hideTip}
         onContextMenu={(e) => {
           if (!onStatusMenu) return;
-          setTipBox(null);
+          hideTip();
           onStatusMenu(e);
         }}
-        onPointerDown={canDrag ? onPointerBegin : undefined}
+        onPointerDown={
+          canDrag
+            ? (e) => {
+                hideTip();
+                onPointerBegin(e);
+              }
+            : hideTip
+        }
         onPointerMove={canDrag ? onPointerDrag : undefined}
         onPointerUp={canDrag ? onPointerEnd : undefined}
         onPointerCancel={canDrag ? onPointerCancel : undefined}
-        onClick={canDrag ? undefined : onOpen}
+        onClick={
+          canDrag
+            ? undefined
+            : () => {
+                hideTip();
+                onOpen();
+              }
+        }
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();

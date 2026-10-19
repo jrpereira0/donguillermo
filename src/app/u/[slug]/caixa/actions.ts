@@ -1,0 +1,412 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { z } from "zod";
+import { requireUnitArea } from "@/lib/auth/guards";
+import { PAY_METHODS, type PayMethod } from "@/lib/caixa/math";
+import { getOpenRegister, getTicket, listCatalog } from "@/lib/caixa/queries";
+import type { CatalogBarber, CatalogProduct, CatalogService, TicketDetail } from "@/lib/caixa/types";
+import { formatRetry, rateLimit } from "@/lib/rate-limit";
+import { createClient } from "@/lib/supabase/server";
+import type { FormState } from "@/lib/validation/auth";
+import { moneyToCents } from "@/lib/validation/service";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const GENERIC = "Não foi possível concluir. Tente novamente.";
+const ONE_HOUR = 60 * 60_000;
+
+const lineSchema = z.object({
+  kind: z.enum(["servico", "produto"]),
+  serviceId: z.string().regex(UUID).nullable(),
+  name: z.string().trim().min(1).max(80),
+  quantity: z.number().int().min(1).max(20),
+  unitPriceCents: z.number().int().min(0).max(10_000_000),
+  barberId: z.string().regex(UUID).nullable(),
+});
+const paySchema = z.object({
+  method: z.enum(PAY_METHODS.map((m) => m.value) as [PayMethod, ...PayMethod[]]),
+  amountCents: z.number().int().min(1).max(100_000_000),
+  installments: z.number().int().min(1).max(12).optional(),
+});
+const tipSchema = z.object({
+  barberId: z.string().regex(UUID),
+  amountCents: z.number().int().min(1).max(10_000_000),
+});
+
+function fail(message: string): FormState {
+  return { status: "error", message };
+}
+
+function throttled(userId: string): FormState | null {
+  const r = rateLimit(`caixa:${userId}`, 400, ONE_HOUR);
+  if (r.ok) return null;
+  return fail(`Muitas operações seguidas. Tente novamente em ${formatRetry(r.retryAfterSeconds)}.`);
+}
+
+function businessDateSP() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
+
+function mapRpc(error: { code?: string; message?: string }): string {
+  if (error.code === "23505") return "Já existe um caixa aberto nesta unidade.";
+  if (error.code === "P0001") return error.message || "Não foi possível concluir.";
+  if (error.code === "P0002") return error.message || "Registro não encontrado.";
+  if (error.code === "22023") return error.message || "Dados inválidos.";
+  return GENERIC;
+}
+
+function readPayload(formData: FormData) {
+  let items: unknown = [];
+  let payments: unknown = [];
+  let tips: unknown = [];
+  try {
+    items = JSON.parse(String(formData.get("items") ?? "[]"));
+    payments = JSON.parse(String(formData.get("payments") ?? "[]"));
+    tips = JSON.parse(String(formData.get("tips") ?? "[]"));
+  } catch {
+    return null;
+  }
+  const lines = z.array(lineSchema).max(30).safeParse(items);
+  const pays = z.array(paySchema).max(6).safeParse(payments);
+  const tipRows = z.array(tipSchema).max(6).safeParse(tips);
+  const discount = moneyToCents(String(formData.get("discount") ?? "0")) ?? 0;
+  const tip = tipRows.success ? tipRows.data.reduce((n, t) => n + t.amountCents, 0) : 0;
+  const notes = String(formData.get("notes") ?? "").trim().slice(0, 500);
+  const barberRaw = String(formData.get("barberId") ?? "");
+  const barberId = UUID.test(barberRaw) ? barberRaw : null;
+  if (!lines.success || !pays.success || !tipRows.success) return null;
+  return {
+    discount,
+    tip,
+    notes,
+    barberId,
+    items: lines.data.map((l) => ({
+      kind: l.kind,
+      service_id: l.kind === "produto" ? null : l.serviceId,
+      name: l.name,
+      quantity: l.quantity,
+      unit_price_cents: l.unitPriceCents,
+      barber_id: l.barberId,
+    })),
+    tips: tipRows.data.map((t) => ({ barber_id: t.barberId, amount_cents: t.amountCents })),
+    payments: pays.data.map((p) => ({
+      method: p.method,
+      amount_cents: p.amountCents,
+      installments: p.method === "credito" ? (p.installments ?? 1) : 1,
+    })),
+  };
+}
+
+function touch(slug: string) {
+  revalidatePath(`/u/${slug}/caixa`);
+  revalidatePath(`/u/${slug}/caixa/historico`);
+  revalidatePath(`/u/${slug}/agenda`);
+  revalidatePath(`/u/${slug}/clientes`);
+}
+
+const dayLabel = (iso: string) =>
+  new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Sao_Paulo" }).format(
+    new Date(`${iso}T12:00:00`),
+  );
+
+export async function openRegisterAction(slug: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const { ctx, unit } = await requireUnitArea(slug, "caixa");
+  const limited = throttled(ctx.userId);
+  if (limited) return limited;
+  const opening = moneyToCents(String(formData.get("opening") ?? "0"));
+  if (opening === null) return fail("Informe o fundo de caixa. Ex.: 100,00.");
+
+  // O dia do caixa é escolhido na abertura — um caixa por dia, sempre novo.
+  const day = String(formData.get("businessDate") ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(new Date(`${day}T12:00:00`).getTime())) {
+    return fail("Escolha o dia do caixa.");
+  }
+  const maxDay = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
+    new Date(Date.now() + 7 * 86_400_000),
+  );
+  if (day < "2024-01-01" || day > maxDay) return fail("Escolha um dia válido para o caixa (até 7 dias à frente).");
+
+  const supabase = await createClient();
+  const open = await getOpenRegister(unit.id);
+  if (open) {
+    return fail(
+      `Já existe um caixa aberto (referente a ${dayLabel(open.businessDate)}). Feche esse caixa antes de abrir outro.`,
+    );
+  }
+  const { data: sameDay } = await supabase
+    .from("cash_registers")
+    .select("id, status")
+    .eq("unit_id", unit.id)
+    .eq("business_date", day)
+    .maybeSingle();
+  if (sameDay) {
+    return fail(
+      sameDay.status === "aberto"
+        ? `Já existe um caixa aberto para ${dayLabel(day)}.`
+        : `Já existe um caixa fechado para ${dayLabel(day)}. Não dá para abrir outro do mesmo dia — reabra aquele: no histórico, toque nesse dia e em "Reabrir caixa".`,
+    );
+  }
+
+  const { error } = await supabase.from("cash_registers").insert({
+    unit_id: unit.id,
+    business_date: day,
+    opening_cents: opening,
+  });
+  if (error) {
+    console.error("[caixa] open:", error.code);
+    if (error.code === "23505") {
+      return fail("Já existe um caixa aberto ou um caixa para este dia nesta unidade.");
+    }
+    return fail(mapRpc(error));
+  }
+  touch(slug);
+  return { status: "success", message: "Caixa aberto." };
+}
+
+export async function closeRegisterAction(slug: string, registerId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const { ctx, unit } = await requireUnitArea(slug, "caixa");
+  const limited = throttled(ctx.userId);
+  if (limited) return limited;
+  if (!UUID.test(registerId)) return fail(GENERIC);
+  const counted = moneyToCents(String(formData.get("counted") ?? ""));
+  if (counted === null) return fail("Informe o dinheiro contado na gaveta.");
+  const notes = String(formData.get("notes") ?? "").trim().slice(0, 500);
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("close_cash_register", {
+    p_id: registerId,
+    p_counted: counted,
+    p_notes: notes,
+  });
+  if (error) {
+    console.error("[caixa] close:", error.code);
+    return fail(mapRpc(error));
+  }
+  void unit;
+  touch(slug);
+  return { status: "success", message: "Caixa fechado." };
+}
+
+export async function reopenRegisterAction(slug: string, registerId: string, _prev: FormState, _formData: FormData): Promise<FormState> {
+  const { ctx, unit } = await requireUnitArea(slug, "caixa");
+  const limited = throttled(ctx.userId);
+  if (limited) return limited;
+  if (!UUID.test(registerId)) return fail(GENERIC);
+  void unit;
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("reopen_cash_register", { p_id: registerId });
+  if (error) {
+    console.error("[caixa] reopen register:", error.code);
+    return fail(mapRpc(error));
+  }
+  touch(slug);
+  redirect(`/u/${slug}/caixa`);
+}
+
+export async function cashMovementAction(slug: string, registerId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const { ctx, unit } = await requireUnitArea(slug, "caixa");
+  const limited = throttled(ctx.userId);
+  if (limited) return limited;
+  if (!UUID.test(registerId)) return fail(GENERIC);
+  const kind = String(formData.get("kind") ?? "");
+  if (kind !== "sangria" && kind !== "suprimento") return fail("Escolha sangria ou suprimento.");
+  const amount = moneyToCents(String(formData.get("amount") ?? ""));
+  if (amount === null || amount < 1) return fail("Informe o valor.");
+  const note = String(formData.get("note") ?? "").trim().slice(0, 200);
+
+  const supabase = await createClient();
+  const { data: reg } = await supabase
+    .from("cash_registers")
+    .select("id")
+    .eq("id", registerId)
+    .eq("unit_id", unit.id)
+    .eq("status", "aberto")
+    .maybeSingle();
+  if (!reg) return fail("O caixa não está aberto.");
+
+  const { error } = await supabase.from("cash_movements").insert({
+    register_id: registerId,
+    unit_id: unit.id,
+    kind,
+    amount_cents: amount,
+    note: note || null,
+  });
+  if (error) {
+    console.error("[caixa] movement:", error.code);
+    return fail(GENERIC);
+  }
+  touch(slug);
+  return { status: "success", message: kind === "sangria" ? "Sangria registrada." : "Suprimento registrado." };
+}
+
+export async function createTicketAction(slug: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const { ctx, unit } = await requireUnitArea(slug, "caixa");
+  const limited = throttled(ctx.userId);
+  if (limited) return limited;
+  const name = String(formData.get("customerName") ?? "").trim().replace(/\s+/g, " ");
+  if (name.length < 2 || name.length > 120) return fail("Informe o nome do cliente.");
+  const barberRaw = String(formData.get("barberId") ?? "");
+  const barberId = UUID.test(barberRaw) ? barberRaw : null;
+
+  const supabase = await createClient();
+  let barberName: string | null = null;
+  if (barberId) {
+    const { data: b } = await supabase
+      .from("barbers")
+      .select("display_name")
+      .eq("id", barberId)
+      .eq("unit_id", unit.id)
+      .maybeSingle<{ display_name: string }>();
+    if (!b) return fail("Profissional não encontrado.");
+    barberName = b.display_name;
+  }
+
+  const { data, error } = await supabase
+    .from("tickets")
+    .insert({
+      unit_id: unit.id,
+      customer_name: name,
+      barber_id: barberId,
+      barber_name: barberName,
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
+    console.error("[caixa] new ticket:", error?.code);
+    return fail(GENERIC);
+  }
+  touch(slug);
+  redirect(`/u/${slug}/caixa/comanda/${data.id}`);
+}
+
+export async function openTicketFromAppointmentAction(slug: string, appointmentId: string) {
+  const { unit } = await requireUnitArea(slug, "caixa");
+  if (!UUID.test(appointmentId)) redirect(`/u/${slug}/agenda`);
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("open_ticket_from_appointment", { p_appointment: appointmentId });
+  if (error || !data) {
+    console.error("[caixa] from appointment:", error?.code);
+    redirect(`/u/${slug}/agenda`);
+  }
+  void unit;
+  redirect(`/u/${slug}/caixa/comanda/${data as string}`);
+}
+
+export async function saveTicketAction(slug: string, ticketId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const { ctx } = await requireUnitArea(slug, "caixa");
+  const limited = throttled(ctx.userId);
+  if (limited) return limited;
+  if (!UUID.test(ticketId)) return fail(GENERIC);
+  const payload = readPayload(formData);
+  if (!payload) return fail("Confira os itens da comanda.");
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("save_open_ticket", {
+    p_id: ticketId,
+    p_discount: payload.discount,
+    p_tip: payload.tip,
+    p_notes: payload.notes,
+    p_barber: payload.barberId,
+    p_items: payload.items,
+    p_tips: payload.tips,
+  });
+  if (error) {
+    console.error("[caixa] save ticket:", error.code);
+    return fail(mapRpc(error));
+  }
+  touch(slug);
+  revalidatePath(`/u/${slug}/caixa/comanda/${ticketId}`);
+  return { status: "success", message: "Comanda salva." };
+}
+
+export async function chargeTicketAction(slug: string, ticketId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const { ctx } = await requireUnitArea(slug, "caixa");
+  const limited = throttled(ctx.userId);
+  if (limited) return limited;
+  if (!UUID.test(ticketId)) return fail(GENERIC);
+  const payload = readPayload(formData);
+  if (!payload || payload.items.length === 0) return fail("Adicione pelo menos um item.");
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("charge_ticket", {
+    p_id: ticketId,
+    p_discount: payload.discount,
+    p_tip: payload.tip,
+    p_barber: payload.barberId,
+    p_items: payload.items,
+    p_payments: payload.payments,
+    p_tips: payload.tips,
+  });
+  if (error) {
+    console.error("[caixa] charge:", error.code);
+    return fail(mapRpc(error));
+  }
+  touch(slug);
+  revalidatePath(`/u/${slug}/caixa/comanda/${ticketId}`);
+  return { status: "success", message: "Pagamento registrado. Comanda fechada." };
+}
+
+/** Reabre uma comanda cobrada: desfaz os pagamentos e volta o agendamento. */
+export async function reopenTicketAction(slug: string, ticketId: string, _prev: FormState, _formData: FormData): Promise<FormState> {
+  const { ctx } = await requireUnitArea(slug, "caixa");
+  const limited = throttled(ctx.userId);
+  if (limited) return limited;
+  if (!UUID.test(ticketId)) return fail(GENERIC);
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("reopen_ticket", { p_id: ticketId });
+  if (error) {
+    console.error("[caixa] reopen:", error.code);
+    return fail(mapRpc(error));
+  }
+  touch(slug);
+  revalidatePath(`/u/${slug}/caixa/comanda/${ticketId}`);
+  return { status: "success", message: "Comanda reaberta. Os pagamentos foram desfeitos." };
+}
+
+export type ComandaLoad =
+  | { ok: true; ticket: TicketDetail; services: CatalogService[]; products: CatalogProduct[]; barbers: CatalogBarber[]; registerOpen: boolean; registerDay: string | null }
+  | { ok: false; message: string };
+
+/** Abre (ou reabre) a comanda do agendamento e devolve os dados para o modal da agenda. */
+export async function loadComandaAction(slug: string, appointmentId: string): Promise<ComandaLoad> {
+  const { unit } = await requireUnitArea(slug, "caixa");
+  if (!UUID.test(appointmentId)) return { ok: false, message: GENERIC };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("open_ticket_from_appointment", { p_appointment: appointmentId });
+  if (error || !data) {
+    console.error("[caixa] load comanda:", error?.code);
+    return { ok: false, message: error ? mapRpc(error) : "Não foi possível abrir a comanda." };
+  }
+  const [ticket, catalog, register] = await Promise.all([
+    getTicket(unit.id, data as string),
+    listCatalog(unit.id),
+    getOpenRegister(unit.id),
+  ]);
+  if (!ticket) return { ok: false, message: "Comanda não encontrada." };
+  return {
+    ok: true,
+    ticket,
+    services: catalog.services,
+    products: catalog.products,
+    barbers: catalog.barbers,
+    registerOpen: !!register,
+    registerDay: register?.businessDate ?? null,
+  };
+}
+
+export async function cancelTicketAction(slug: string, ticketId: string): Promise<void> {
+  const { unit } = await requireUnitArea(slug, "caixa");
+  if (!UUID.test(ticketId)) redirect(`/u/${slug}/caixa`);
+  const supabase = await createClient();
+  await supabase
+    .from("tickets")
+    .update({ status: "cancelada", closed_at: new Date().toISOString() })
+    .eq("id", ticketId)
+    .eq("unit_id", unit.id)
+    .eq("status", "aberta");
+  touch(slug);
+  redirect(`/u/${slug}/caixa`);
+}

@@ -8,6 +8,8 @@ import {
   Clock,
   Loader2,
   Pencil,
+  Receipt,
+  RotateCcw,
   Scissors,
   Search,
   UserRound,
@@ -62,6 +64,8 @@ type Props = {
   onDone: (message: string, date?: string) => void;
   /** Recarrega a grade a partir do banco (horários reais). */
   onRefresh: () => void;
+  /** Abre a comanda neste mesmo modal da agenda. */
+  onCharge?: (appointmentId: string) => void;
 };
 
 const EDITABLE = ["agendado", "confirmado", "em_atendimento"];
@@ -76,7 +80,7 @@ export function AppointmentDialog(props: Props) {
 
   return (
     <DialogShell
-      wide={editing || !entry}
+      wide
       eyebrow={entry ? shortDateLabel(entry.date) : "Recepção"}
       title={entry ? (editing ? "Editar agendamento" : "Agendamento") : "Novo agendamento"}
       onClose={props.onClose}
@@ -690,6 +694,7 @@ function AppointmentDetailView({
   barbers,
   slot,
   onDone,
+  onCharge,
   onEdit,
   entry,
 }: Props & { entry: AgendaEntry; onEdit: () => void }) {
@@ -720,122 +725,112 @@ function AppointmentDetailView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <DialogBody className="flex flex-col gap-3.5">
+      <DialogBody scroll={false} className="flex flex-col gap-5">
         {statusError ? <FormAlert tone="error">{statusError}</FormAlert> : null}
 
-        {/* Horário em destaque — sem overflow que corta a tipografia */}
-        <div className="rounded-2xl border border-gold/25 bg-gradient-to-br from-gold/[0.12] via-[#1a1712] to-[#121212] px-4 py-4 sm:px-5 sm:py-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={cn("label-caps rounded-md border px-2.5 py-1 text-[0.65rem]", statusBadgeClass(entry.status))}>
-              {statusLabel(entry.status)}
-            </span>
-            {noPref ? (
-              <span className="label-caps rounded-md border border-gold/25 bg-gold/[0.06] px-2 py-1 text-[0.6rem] text-gold/80">
-                Sem preferência
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-3 font-heading text-[1.85rem] font-semibold leading-tight tracking-wide text-gold tabular-nums sm:text-[2.15rem]">
-            <span className="inline-block py-0.5">
+        {/* Horário — limpo: hora grande, situação ao lado, data numa linha */}
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <p className="font-heading text-[2rem] font-semibold leading-none tracking-wide text-gold tabular-nums">
               {entry.time}
               <span className="mx-2 font-normal text-gold/40">–</span>
               {entry.endTime}
+            </p>
+            <span className={cn("label-caps rounded-full border px-3 py-1 text-[0.65rem]", statusBadgeClass(entry.status))}>
+              {statusLabel(entry.status)}
             </span>
-          </p>
-          <p className="mt-1.5 text-sm capitalize text-muted-foreground">
+          </div>
+          <p className="mt-2 text-sm capitalize text-muted-foreground">
             {longDateLabel(entry.date)}
             <span className="text-muted-foreground/40"> · </span>
             {formatDuration(duration)}
           </p>
         </div>
 
-        {/* Cliente + profissional — mesma altura e alinhamento */}
-        <div className="grid gap-2.5">
-          <div className="flex min-h-[4.25rem] items-center gap-3 rounded-xl border border-border/70 bg-[#141414] px-3.5 py-3">
+        <div className="h-px bg-border/60" aria-hidden="true" />
+
+        {/* Cliente + profissional — sem caixas, só avatar e texto */}
+        <div className="grid grid-cols-2 gap-5">
+          <div className="flex min-w-0 items-start gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-gold/30 bg-gold/[0.08] text-gold">
               <UserRound className="size-4" aria-hidden="true" />
             </span>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0">
               <p className="label-caps text-[0.6rem] leading-none text-muted-foreground">Cliente</p>
-              <p className="mt-1 truncate text-sm font-medium leading-snug text-cream">
+              <p className="mt-1.5 truncate text-sm font-medium leading-snug text-cream">
                 {walkIn ? "Cliente sem cadastro" : (entry.customerName ?? "—")}
               </p>
-              {phone ? <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">{phone}</p> : null}
-            </div>
-            {entry.customerId ? (
-              <Link
-                href={`/u/${slug}/clientes/${entry.customerId}`}
-                className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-8 shrink-0 text-[0.7rem]")}
-              >
-                Ficha
-              </Link>
-            ) : null}
-          </div>
-
-          <div className="flex min-h-[4.25rem] items-center gap-3 rounded-xl border border-border/70 bg-[#141414] px-3.5 py-3">
-            {noPref ? (
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-gold/30 bg-gold/[0.08] text-gold">
-                <Users className="size-4" aria-hidden="true" />
-              </span>
-            ) : barber ? (
-              <BarberAvatar name={barber.name} url={barber.photoUrl} className="size-10 shrink-0 text-sm" />
-            ) : (
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-border bg-[#0e0e0e] text-muted-foreground">
-                <UserRound className="size-4" aria-hidden="true" />
-              </span>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="label-caps text-[0.6rem] leading-none text-muted-foreground">Profissional</p>
-              <p className="mt-1 truncate text-sm font-medium leading-snug text-cream">
-                {noPref ? "Sem preferência" : (barber?.name ?? "—")}
-              </p>
-              {noPref && barber ? (
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">Na grade: {barber.name}</p>
-              ) : barber?.role ? (
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">{barber.role}</p>
+              {phone ? <p className="mt-0.5 truncate text-xs tabular-nums text-muted-foreground">{phone}</p> : null}
+              {entry.customerId ? (
+                <Link
+                  href={`/u/${slug}/clientes/${entry.customerId}`}
+                  className="link-luxe mt-1 inline-block text-xs font-medium"
+                >
+                  Ver ficha
+                </Link>
               ) : null}
             </div>
           </div>
+
+          <div className="flex min-w-0 items-start gap-3">
+            {barber ? (
+              <BarberAvatar name={barber.name} url={barber.photoUrl} className="size-10 shrink-0 text-sm" />
+            ) : (
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-gold/30 bg-gold/[0.08] text-gold">
+                <Users className="size-4" aria-hidden="true" />
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className="label-caps text-[0.6rem] leading-none text-muted-foreground">Profissional</p>
+              <p className="mt-1.5 truncate text-sm font-medium leading-snug text-cream">
+                {barber?.name ?? "A definir"}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {noPref ? "Sem preferência do cliente" : (barber?.role ?? "")}
+              </p>
+            </div>
+          </div>
         </div>
 
-        {/* Serviços — colunas alinhadas */}
-        <div className="rounded-xl border border-border/70 bg-[#141414]">
-          <div className="flex items-center gap-2 border-b border-border/60 px-3.5 py-2.5">
-            <Scissors className="size-3.5 shrink-0 text-gold/80" aria-hidden="true" />
-            <p className="label-caps text-[0.6rem] text-muted-foreground">Serviços</p>
-          </div>
+        <div className="h-px bg-border/60" aria-hidden="true" />
+
+        {/* Serviços — lista simples com total */}
+        <div>
+          <p className="label-caps text-[0.6rem] text-muted-foreground">Serviços</p>
           {entry.services.length === 0 ? (
-            <p className="px-3.5 py-3 text-sm text-muted-foreground">Nenhum serviço.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Nenhum serviço.</p>
           ) : (
-            <ul className="divide-y divide-border/50">
-              {entry.services.map((s) => (
-                <li
-                  key={s.serviceId}
-                  className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 px-3.5 py-3 text-sm"
-                >
-                  <span className="truncate text-cream">{s.name}</span>
-                  <span className="text-right text-xs tabular-nums text-muted-foreground">
-                    {formatDuration(s.minutes)}
-                  </span>
-                  <span className="min-w-[4.25rem] text-right tabular-nums text-cream/90">
-                    {formatBRL(s.priceCents)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="mt-1 divide-y divide-border/50">
+                {entry.services.map((s) => (
+                  <li
+                    key={s.serviceId}
+                    className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 py-2.5 text-sm"
+                  >
+                    <span className="truncate text-cream">{s.name}</span>
+                    <span className="text-right text-xs tabular-nums text-muted-foreground">
+                      {formatDuration(s.minutes)}
+                    </span>
+                    <span className="min-w-[4.25rem] text-right tabular-nums text-cream/90">
+                      {formatBRL(s.priceCents)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center justify-between gap-3 border-t border-gold/25 pt-3">
+                <span className="text-sm text-muted-foreground">Total</span>
+                <span className="font-heading text-xl font-semibold leading-none tracking-wide text-gold tabular-nums">
+                  {formatBRL(sum.priceCents)}
+                </span>
+              </div>
+            </>
           )}
-          <div className="flex items-center justify-between gap-3 border-t border-gold/20 bg-gradient-to-r from-gold/[0.1] to-transparent px-3.5 py-3">
-            <span className="text-xs text-muted-foreground">{formatDuration(sum.minutes)} no total</span>
-            <span className="font-heading text-xl font-semibold leading-none tracking-wide text-gold tabular-nums">
-              {formatBRL(sum.priceCents)}
-            </span>
-          </div>
         </div>
 
         {entry.notes?.trim() ? (
-          <div className="rounded-xl border border-border/60 bg-[#121212] px-3.5 py-3">
+          <div>
             <p className="label-caps text-[0.6rem] text-muted-foreground">Observação</p>
-            <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-cream/85">
+            <p className="mt-1.5 line-clamp-2 whitespace-pre-wrap text-sm leading-snug text-cream/85">
               {entry.notes.trim()}
             </p>
           </div>
@@ -846,7 +841,13 @@ function AppointmentDetailView({
         ) : null}
       </DialogBody>
 
-      <DialogFooter className="flex-col gap-2 sm:flex-col sm:items-stretch">
+      <DialogFooter className="flex-col gap-2 py-3 sm:flex-col sm:items-stretch sm:py-3">
+        {onCharge && entry.status !== "cancelado" && entry.status !== "faltou" ? (
+          <Button type="button" variant="luxe" size="lg" className="w-full" disabled={statusPending} onClick={() => onCharge(entry.id)}>
+            <Receipt className="size-3.5" aria-hidden="true" />
+            Cobrar
+          </Button>
+        ) : null}
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
           {canEdit ? (
             <Button
@@ -864,13 +865,22 @@ function AppointmentDetailView({
           {mainMove ? (
             <Button
               type="button"
-              variant="luxe"
+              variant={onCharge && entry.status !== "cancelado" && entry.status !== "faltou" ? "outline" : "luxe"}
               size="lg"
               disabled={statusPending}
               onClick={() => move(mainMove.to)}
-              className="sm:flex-[1.35]"
+              className={cn(
+                "sm:flex-[1.35]",
+                onCharge && entry.status !== "cancelado" && entry.status !== "faltou"
+                  ? "border-gold/40 text-gold hover:border-gold/70 hover:bg-gold/10 hover:text-gold"
+                  : undefined,
+              )}
             >
-              {statusPending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+              {statusPending ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : mainMove.label.startsWith("Reabrir") || mainMove.label.startsWith("Reativar") ? (
+                <RotateCcw className="size-3.5" aria-hidden="true" />
+              ) : null}
               {mainMove.label}
             </Button>
           ) : null}

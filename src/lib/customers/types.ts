@@ -39,15 +39,16 @@ export type CustomerFormState = FormState & { values?: Record<string, string> };
 export const initialCustomerState: CustomerFormState = { status: "idle" };
 
 /**
- * Uma comanda no histórico do cliente. Ainda não existe o módulo de comandas: a aba
- * "Histórico" já aceita esta lista e mostra o estado vazio até as comandas existirem.
- * A unidade de cada atendimento é sempre exibida (o cliente é da rede).
+ * Uma comanda no histórico do cliente (rede inteira).
+ * A unidade de cada atendimento é sempre exibida.
  */
 export type CustomerHistoryEntry = {
   id: string;
   /** ISO 8601 (abertura da comanda). */
   openedAt: string;
   unitName: string;
+  /** Slug da unidade — a ficha só abre a comanda se for a unidade atual. */
+  unitSlug: string | null;
   barberName: string | null;
   status: "aberta" | "fechada" | "cancelada";
   totalCents: number;

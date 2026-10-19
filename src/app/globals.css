@@ -563,6 +563,52 @@ input:autofill {
   box-shadow: 0 0 0 3px rgb(229 96 77 / 0.16);
 }
 
+/*
+ * PADRÃO DE ROLAGEM (`.scroll-luxe`): barra fina e arredondada em dourado
+ * discreto sobre trilho transparente. Some visualmente no meio do conteúdo
+ * escuro e ganha presença no hover. Usar em toda área rolável do sistema
+ * (modais, listas, painéis) em vez da barra padrão do navegador.
+ * Fora de @layer pelo mesmo motivo do `.field-luxe`.
+ */
+.scroll-luxe {
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+/*
+ * Chrome/Edge: NÃO definir `scrollbar-width`/`scrollbar-color` aqui. Com essas
+ * propriedades o Chromium descarta os pseudo-elementos abaixo e volta à barra
+ * padrão do sistema (grossa, cinza, com setas).
+ */
+.scroll-luxe::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-luxe::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  display: none;
+}
+.scroll-luxe::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-luxe::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgb(205 176 120 / 0.55), rgb(192 160 98 / 0.28));
+}
+.scroll-luxe:hover::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgb(205 176 120 / 0.85), rgb(192 160 98 / 0.5));
+}
+.scroll-luxe::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Firefox: sem pseudo-elementos, usa as propriedades padrão. */
+@-moz-document url-prefix() {
+  .scroll-luxe {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(192 160 98 / 0.35) transparent;
+  }
+}
+
 /* ==========================================================================
  * BORDA DA SIDEBAR (`.sidebar-edge`): filete dourado de 1px na borda direita e,
  * por cima, um fio de luz que percorre a borda de cima para baixo (mesma família

@@ -76,12 +76,55 @@ export async function listNetworkUnitNames(): Promise<Record<string, string>> {
 
 /**
  * Comandas do cliente em TODAS as unidades da rede, da mais recente para a mais antiga.
- * O módulo de comandas ainda não existe, então por enquanto devolve lista vazia; quando
- * existir, é aqui que a consulta entra (sempre trazendo o nome da unidade de cada comanda).
+ * A recepção lê comandas da rede (RLS); o nome da unidade vem de `network_units`.
  */
 export async function listCustomerHistory(customerId: string): Promise<CustomerHistoryEntry[]> {
-  void customerId;
-  return [];
+  const supabase = await createClient();
+  const [tickets, units] = await Promise.all([
+    supabase
+      .from("tickets")
+      .select(
+        "id, unit_id, opened_at, status, barber_name, discount_cents, tip_cents, ticket_items(name, quantity, unit_price_cents, position)",
+      )
+      .eq("customer_id", customerId)
+      .order("opened_at", { ascending: false })
+      .limit(60)
+      .returns<
+        {
+          id: string;
+          unit_id: string;
+          opened_at: string;
+          status: CustomerHistoryEntry["status"];
+          barber_name: string | null;
+          discount_cents: number;
+          tip_cents: number;
+          ticket_items: { name: string; quantity: number; unit_price_cents: number; position: number }[];
+        }[]
+      >(),
+    supabase.rpc("network_units"),
+  ]);
+  if (tickets.error) {
+    console.error("[customers] history:", tickets.error.code);
+    return [];
+  }
+  const byId = new Map(
+    ((units.data ?? []) as { id: string; name: string; slug: string }[]).map((u) => [u.id, u]),
+  );
+  return (tickets.data ?? []).map((t) => {
+    const lines = [...(t.ticket_items ?? [])].sort((a, b) => a.position - b.position);
+    const subtotal = lines.reduce((n, l) => n + l.quantity * l.unit_price_cents, 0);
+    const unit = byId.get(t.unit_id);
+    return {
+      id: t.id,
+      openedAt: t.opened_at,
+      unitName: unit?.name ?? "Unidade",
+      unitSlug: unit?.slug ?? null,
+      barberName: t.barber_name,
+      status: t.status,
+      totalCents: Math.max(0, subtotal - t.discount_cents) + (t.tip_cents ?? 0),
+      items: lines.map((l) => (l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name)),
+    };
+  });
 }
 
 /** Observações do cliente, da mais recente para a mais antiga (`unitNames`: id -> nome, de listNetworkUnitNames). */
