@@ -50,13 +50,53 @@ export async function cropToBlob(
   side: number,
   options: { outSize?: number; targetBytes?: number } = {},
 ): Promise<Blob> {
-  const out = Math.max(1, Math.min(options.outSize ?? PHOTO_OUT_SIZE, Math.round(side)));
+  return cropRectToBlob(img, sx, sy, side, side, options);
+}
+
+/**
+ * Recorta um retângulo (`sx`, `sy`, `sw` x `sh`, em pixels da imagem original) e reduz para
+ * no máximo `outSize` de LARGURA, mantendo a proporção do recorte (capa 16:9, por exemplo).
+ */
+export async function cropRectToBlob(
+  img: CanvasImageSource,
+  sx: number,
+  sy: number,
+  sw: number,
+  sh: number,
+  options: { outSize?: number; targetBytes?: number } = {},
+): Promise<Blob> {
+  const outW = Math.max(1, Math.min(options.outSize ?? PHOTO_OUT_SIZE, Math.round(sw)));
+  const outH = Math.max(1, Math.round((outW * sh) / sw));
   const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = out;
+  canvas.width = outW;
+  canvas.height = outH;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("canvas");
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(img, sx, sy, side, side, 0, 0, out, out);
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+  return encodePhoto(canvas, options.targetBytes);
+}
+
+/**
+ * Reduz a imagem inteira (sem recortar) para caber em `maxSide` pixels, preservando a
+ * proporção e a transparência (logotipo). Não amplia imagens pequenas.
+ */
+export async function fitToBlob(
+  img: HTMLImageElement,
+  options: { maxSide?: number; targetBytes?: number } = {},
+): Promise<Blob> {
+  const maxSide = options.maxSide ?? PHOTO_OUT_SIZE;
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const k = Math.min(1, maxSide / Math.max(w, h));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(w * k));
+  canvas.height = Math.max(1, Math.round(h * k));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   return encodePhoto(canvas, options.targetBytes);
 }

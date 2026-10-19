@@ -16,7 +16,7 @@ export default async function NewUnitPage() {
         </Link>
         <h1 className="mt-2 text-3xl">Nova unidade</h1>
       </div>
-      <UnitForm mode="create" />
+      <UnitForm />
     </div>
   );
 }

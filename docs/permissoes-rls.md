@@ -38,7 +38,7 @@ Todos limitam o tamanho do arquivo e aceitam só `webp`, `jpeg` e `png`. Os nome
 Observações:
 
 - "A sua unidade" só vale enquanto **vínculo, perfil e unidade estão ativos** e a unidade não foi excluída. Desativar uma unidade tira o acesso da recepção e dos barbeiros dela imediatamente, inclusive aos clientes.
-- Recepção **não** altera a própria unidade; só o admin da rede.
+- Recepção altera as **configurações** da própria unidade (nome, CNPJ, endereço, telefones, horário, agenda, logo e capa), mas **não** o slug, a situação (ativa/inativa) nem a exclusão: isso é só do admin da rede (gatilho no banco).
 - **Privacidade dos clientes:** por decisão do negócio, a recepção de qualquer unidade vê todos os clientes da rede e suas observações. O barbeiro não lê a tabela (a agenda mostrará só o necessário, por consulta específica).
 - Criar usuários e vínculos é função do admin da rede (painel) e da recepção para barbeiros da própria unidade. Na prática, passam pelo servidor com `service_role`, **depois** de validar o papel de quem pediu.
 

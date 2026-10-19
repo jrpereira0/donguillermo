@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ageFrom, cpfProblem, customerSchema, isValidCpf, maskCpf, noteSchema } from "./customer";
+import {
+  ageFrom,
+  cpfProblem,
+  customerSchema,
+  formatPersonName,
+  isValidCpf,
+  maskCpf,
+  noteSchema,
+} from "./customer";
 
 const base = {
   fullName: "  Maria da Silva ",
@@ -39,6 +47,15 @@ describe("CPF", () => {
   });
 });
 
+describe("formatPersonName", () => {
+  it("capitaliza nome e sobrenome", () => {
+    expect(formatPersonName("joão")).toBe("João");
+    expect(formatPersonName("MARIA")).toBe("Maria");
+    expect(formatPersonName("  maria DA silva ")).toBe("Maria da Silva");
+    expect(formatPersonName("pedro de souza")).toBe("Pedro de Souza");
+  });
+});
+
 describe("customerSchema", () => {
   it("só nome e telefone são obrigatórios", () => {
     const r = customerSchema.safeParse(base);
@@ -51,6 +68,12 @@ describe("customerSchema", () => {
       expect(r.data.referralSource).toBeNull();
       expect(r.data.marketingConsent).toBe(false);
     }
+  });
+
+  it("formata o nome ao salvar", () => {
+    const r = customerSchema.safeParse({ ...base, fullName: "josé CARLOS dos santos" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.fullName).toBe("José Carlos dos Santos");
   });
   it("exige nome e telefone", () => {
     const r = customerSchema.safeParse({ ...base, fullName: "", phone: "" });

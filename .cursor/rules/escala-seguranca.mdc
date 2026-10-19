@@ -1,0 +1,33 @@
+---
+description: Escala (13+ unidades, 100k+ agendamentos/mês), segurança de dados e performance
+alwaysApply: true
+---
+
+# Escala, segurança e velocidade
+
+Rede com **13+ barbearias** e **100k+ agendamentos/mês**. Toda mudança deve aguentar carga real e proteger dados.
+
+## Segurança de dados
+
+- Nunca confiar no cliente: validar no servidor; `unit_id` / identidade vêm do guard/sessão, nunca do formulário.
+- RLS no Supabase como última linha; actions e RPCs ainda conferem unidade e papel.
+- Sem vazamento entre unidades: queries sempre filtradas por `unit_id` (ou rede, só admin).
+- Segredos só em env / service role no servidor; nunca no front.
+- Em dúvida sobre overlap/corrida: preferir constraint/trigger no banco + mensagem clara ao front.
+
+## Performance e infraestrutura
+
+- Agenda e listagens: índices por `(unit_id, starts_at)` / profissional; evitar full scans.
+- Leituras do dia: faixa de tempo limitada; não carregar histórico inteiro na grade.
+- Writes de agendamento atômicos (RPC); checagens de slot no servidor, não só no UI.
+- Revalidar/atualizar o necessário; polling leve na recepção, sem refetch pesado a cada clique.
+- Evitar N+1; preferir joins/`select` enxutos; paginar buscas (clientes, histórico).
+
+## Produto (recepção × cliente)
+
+- Recepção pode encaixar (overlap / fora do expediente com confirmação).
+- Cliente no navegador: só slots livres; `appointmentSlotTaken` antes de gravar.
+
+## Ao projetar
+
+Perguntar: “isso aguenta 13 unidades e pico de milhares de marcações no dia?” Se não, redesenhar antes de shippar.

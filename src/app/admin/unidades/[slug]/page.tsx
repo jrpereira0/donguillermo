@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { InviteReceptionForm } from "@/components/admin/invite-reception-form";
 import { ReceptionPasswordForm } from "@/components/admin/reception-password-form";
-import { UnitForm } from "@/components/admin/unit-form";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,8 +59,37 @@ export default async function ManageUnitPage({ params }: PageProps<"/admin/unida
         <CardHeader>
           <CardTitle className="font-heading text-xl uppercase tracking-wide">Dados</CardTitle>
         </CardHeader>
-        <CardContent>
-          <UnitForm mode="edit" unit={unit} />
+        <CardContent className="flex flex-col gap-4">
+          <dl className="grid gap-1 text-sm">
+            <div>
+              <dt className="label-caps">Endereço na web</dt>
+              <dd className="font-mono text-xs text-muted-foreground">/u/{unit.slug}</dd>
+            </div>
+            {unit.address ? (
+              <div>
+                <dt className="sr-only">Endereço</dt>
+                <dd>{unit.address}</dd>
+              </div>
+            ) : null}
+            {unit.phone ? (
+              <div>
+                <dt className="sr-only">Telefone</dt>
+                <dd className="text-muted-foreground">{unit.phone}</dd>
+              </div>
+            ) : null}
+          </dl>
+          <p className="text-sm text-muted-foreground">
+            Marca, contato, endereço, horário de funcionamento e tempo da agenda são editados nas configurações da
+            unidade (a recepção também pode alterá-los). O endereço na web não muda depois de criado.
+          </p>
+          <div>
+            <Link
+              href={`/u/${unit.slug}/configuracoes`}
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              Abrir configurações da unidade
+            </Link>
+          </div>
         </CardContent>
       </Card>
 

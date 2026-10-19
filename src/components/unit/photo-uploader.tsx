@@ -5,6 +5,7 @@ import { Camera, Crop, Loader2, Trash2 } from "lucide-react";
 import { FieldError } from "@/components/auth/form-alert";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { fitToBlob } from "@/lib/barbers/image";
 import { PHOTO_BUCKET } from "@/lib/barbers/types";
 import { BarberAvatar } from "./barber-avatar";
 import { PhotoCropper } from "./photo-cropper";
@@ -24,9 +25,13 @@ type Props = {
   /** Nome do campo oculto que leva o caminho ao formulário. */
   fieldName?: string;
   /** "foto" (padrão) ou "imagem": ajusta os textos. */
-  noun?: "foto" | "imagem";
+  noun?: "foto" | "imagem" | "logo" | "capa";
   /** Máscara do recorte e tamanho/peso da imagem final. */
   shape?: "circle" | "rounded";
+  /** Proporção do recorte (largura/altura). Padrão: quadrado. */
+  aspect?: number;
+  /** "crop" (padrão): ajuste e recorte. "fit": sem recorte, só reduz e comprime (logotipo). */
+  mode?: "crop" | "fit";
   outSize?: number;
   targetBytes?: number;
   /** Pré-visualização própria (padrão: avatar com iniciais). */
@@ -55,6 +60,8 @@ export function PhotoUploader({
   fieldName = "photoPath",
   noun = "foto",
   shape = "circle",
+  aspect,
+  mode = "crop",
   outSize,
   targetBytes,
   renderPreview,
@@ -84,7 +91,29 @@ export function PhotoUploader({
     setError(undefined);
     if (!file.type.startsWith("image/")) return setError("Escolha um arquivo de imagem.");
     if (file.size > MAX_INPUT_BYTES) return setError("Imagem muito grande (máx. 12 MB).");
+    if (mode === "fit") return void fit(file);
     setEditing(file);
+  }
+
+  /** Modo logotipo: reduz e comprime a imagem inteira, sem janela de recorte. */
+  async function fit(file: File) {
+    setBusyBoth(true);
+    const url = URL.createObjectURL(file);
+    try {
+      const el = new Image();
+      await new Promise<void>((resolve, reject) => {
+        el.onload = () => resolve();
+        el.onerror = () => reject(new Error("load"));
+        el.src = url;
+      });
+      const blob = await fitToBlob(el, { maxSide: outSize, targetBytes });
+      await upload(blob);
+    } catch {
+      setError(`Não foi possível abrir essa ${noun}. Tente outro arquivo.`);
+    } finally {
+      URL.revokeObjectURL(url);
+      setBusyBoth(false);
+    }
   }
 
   /** Reposicionar: usa a imagem original desta sessão; se não houver, a foto já salva. */
@@ -121,7 +150,7 @@ export function PhotoUploader({
       // O arquivo antigo (se o formato mudou) é removido pela action ao salvar.
       setPath(newPath);
       setPreview(URL.createObjectURL(blob));
-      setSource(editing);
+      setSource(mode === "crop" ? editing : null);
       setEditing(null);
     } catch {
       setError(`Não foi possível enviar a ${noun}. Tente novamente.`);
@@ -152,10 +181,12 @@ export function PhotoUploader({
           </Button>
           {path ? (
             <>
-              <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={reposition}>
-                <Crop />
-                Reposicionar
-              </Button>
+              {mode === "crop" ? (
+                <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={reposition}>
+                  <Crop />
+                  Reposicionar
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
@@ -174,7 +205,9 @@ export function PhotoUploader({
           ) : null}
         </div>
         <p className="text-xs text-muted-foreground">
-          JPG, PNG ou WebP. Você ajusta o enquadramento e a {noun} é comprimida automaticamente.
+          {mode === "fit"
+            ? `JPG, PNG ou WebP. A ${noun} é reduzida e comprimida automaticamente, sem cortes.`
+            : `JPG, PNG ou WebP. Você ajusta o enquadramento e a ${noun} é comprimida automaticamente.`}
         </p>
         <FieldError id="photo-error" message={error} />
       </div>
@@ -185,6 +218,7 @@ export function PhotoUploader({
           onCancel={() => setEditing(null)}
           onConfirm={upload}
           shape={shape}
+          aspect={aspect}
           outSize={outSize}
           targetBytes={targetBytes}
           noun={noun}

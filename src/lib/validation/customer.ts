@@ -64,11 +64,32 @@ export const referralLabel = (v: string | null | undefined) =>
 
 const empty = (v: string) => v === "";
 
+/** Partículas que ficam em minúsculo no meio do nome (pt-BR). */
+const NAME_PARTICLES = new Set(["da", "das", "de", "do", "dos", "e"]);
+
+/**
+ * Formata nome de pessoa: primeira letra maiúscula em cada palavra
+ * ("maria da SILVA" → "Maria da Silva").
+ */
+export function formatPersonName(input: string): string {
+  return input
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word, i) => {
+      const lower = word.toLocaleLowerCase("pt-BR");
+      if (i > 0 && NAME_PARTICLES.has(lower)) return lower;
+      return lower.charAt(0).toLocaleUpperCase("pt-BR") + lower.slice(1);
+    })
+    .join(" ");
+}
+
 export const customerNameField = z
   .string()
   .trim()
   .min(2, "Informe o nome do cliente.")
-  .max(120, "Nome muito longo (máx. 120 caracteres).");
+  .max(120, "Nome muito longo (máx. 120 caracteres).")
+  .transform(formatPersonName);
 
 /** Telefone obrigatório no painel (é o contato principal): guarda só os dígitos. */
 export const customerPhoneField = z

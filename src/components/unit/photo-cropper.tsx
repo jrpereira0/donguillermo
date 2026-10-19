@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Loader2, Move, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cropToBlob } from "@/lib/barbers/image";
+import { cropRectToBlob } from "@/lib/barbers/image";
 
 const VIEW_MAX = 280; // lado máximo da área de ajuste, em px de tela
+const VIEW_MAX_WIDE = 400; // largura máxima quando o recorte é retangular
 const MAX_ZOOM = 4;
 
 type Loaded = { el: HTMLImageElement; w: number; h: number; url: string };
@@ -24,6 +25,8 @@ type Props = {
   targetBytes?: number;
   /** Como chamar o arquivo na janela ("foto" ou "imagem"). */
   noun?: string;
+  /** Proporção largura/altura do recorte (padrão 1 = quadrado; capa = 16/9). */
+  aspect?: number;
 };
 
 /**
@@ -31,9 +34,13 @@ type Props = {
  * A máscara mostra exatamente o que vai aparecer no avatar (ou na miniatura). A imagem nunca deixa
  * "buracos": o recorte sempre fica dentro da foto.
  */
-export function PhotoCropper({ source, onCancel, onConfirm, shape = "circle", outSize, targetBytes, noun = "foto" }: Props) {
+export function PhotoCropper({ source, onCancel, onConfirm, shape = "circle", outSize, targetBytes, noun = "foto", aspect = 1 }: Props) {
   // Cabe em telas estreitas (janela = 92% da tela, menos o respiro interno). Este componente só monta no cliente.
-  const [VIEW] = useState(() => Math.max(200, Math.min(VIEW_MAX, Math.floor(window.innerWidth * 0.92) - 48)));
+  // Recortes largos (capa) ganham uma janela mais larga; a altura segue a proporção.
+  const [VIEW] = useState(() =>
+    Math.max(200, Math.min(aspect > 1 ? VIEW_MAX_WIDE : VIEW_MAX, Math.floor(window.innerWidth * 0.92) - 48)),
+  );
+  const VIEW_H = VIEW / aspect;
   const dialog = useRef<HTMLDialogElement>(null);
   const drag = useRef<{ x: number; y: number } | null>(null);
   const [img, setImg] = useState<Loaded | null>(null);
@@ -61,15 +68,16 @@ export function PhotoCropper({ source, onCancel, onConfirm, shape = "circle", ou
   }, [source]);
 
   // Escala base: a menor lado da foto cobre a área de ajuste; zoom multiplica.
-  const base = img ? VIEW / Math.min(img.w, img.h) : 1;
+  const base = img ? Math.max(VIEW / img.w, VIEW_H / img.h) : 1;
   const scale = base * zoom;
 
   function clamp(c: { x: number; y: number }, s: number) {
     if (!img) return c;
-    const half = VIEW / 2 / s;
+    const halfX = VIEW / 2 / s;
+    const halfY = VIEW_H / 2 / s;
     return {
-      x: Math.min(Math.max(c.x, half), img.w - half),
-      y: Math.min(Math.max(c.y, half), img.h - half),
+      x: Math.min(Math.max(c.x, halfX), img.w - halfX),
+      y: Math.min(Math.max(c.y, halfY), img.h - halfY),
     };
   }
 
@@ -87,15 +95,16 @@ export function PhotoCropper({ source, onCancel, onConfirm, shape = "circle", ou
     if (!img || busy) return;
     setBusy(true);
     try {
-      const side = VIEW / scale;
-      await onConfirm(await cropToBlob(img.el, center.x - side / 2, center.y - side / 2, side, { outSize, targetBytes }));
+      const sw = VIEW / scale;
+      const sh = VIEW_H / scale;
+      await onConfirm(await cropRectToBlob(img.el, center.x - sw / 2, center.y - sh / 2, sw, sh, { outSize, targetBytes }));
     } finally {
       setBusy(false);
     }
   }
 
   const left = img ? VIEW / 2 - center.x * scale : 0;
-  const top = img ? VIEW / 2 - center.y * scale : 0;
+  const top = img ? VIEW_H / 2 - center.y * scale : 0;
 
   return createPortal(
     <dialog
@@ -105,7 +114,7 @@ export function PhotoCropper({ source, onCancel, onConfirm, shape = "circle", ou
         if (!busy) onCancel();
       }}
       aria-labelledby="cropper-title"
-      className="m-auto w-[min(92vw,24rem)] rounded-xl border border-gold/40 bg-card p-5 text-foreground sm:p-6 shadow-2xl backdrop:bg-black/70"
+      className={`m-auto ${aspect > 1 ? "w-[min(92vw,30rem)]" : "w-[min(92vw,24rem)]"} rounded-xl border border-gold/40 bg-card p-5 text-foreground sm:p-6 shadow-2xl backdrop:bg-black/70`}
     >
       <div className="flex flex-col items-center gap-5">
         <div className="flex w-full items-start justify-between gap-3">
@@ -128,7 +137,7 @@ export function PhotoCropper({ source, onCancel, onConfirm, shape = "circle", ou
           tabIndex={0}
           aria-label={`Área de ajuste da ${noun}. Use as setas para mover e + ou - para ampliar.`}
           className="relative touch-none overflow-hidden rounded-lg bg-[#0b0b0b] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-          style={{ width: VIEW, height: VIEW, cursor: img ? "grab" : "default" }}
+          style={{ width: VIEW, height: VIEW_H, cursor: img ? "grab" : "default" }}
           onPointerDown={(e) => {
             if (!img) return;
             e.currentTarget.setPointerCapture(e.pointerId);

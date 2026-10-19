@@ -2,10 +2,11 @@
 // do schema auth. Não precisa de rede, senha de banco nem do projeto Supabase.
 // Uso: npm run test:rls:offline
 import { PGlite } from "@electric-sql/pglite";
+import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const db = new PGlite();
+const db = new PGlite({ extensions: { btree_gist } });
 await db.exec(`
   create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
   create schema auth;
@@ -31,6 +32,8 @@ let total = 0, fail = 0;
 const check = (n, c, x = "") => { total++; if (c) console.log("  ok  ", n); else { fail++; console.log("  FALHOU", n, x); } };
 const uid = async (email) => (await db.query("insert into auth.users (email) values ($1) returning id", [email])).rows[0].id;
 const as = async (id) => { await db.exec("reset role"); await db.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]); await db.exec(`set role ${id ? "authenticated" : "anon"}`); };
+// Servidor/migrations: sem papel de usuário e SEM sessão (auth.uid() nulo), como a service_role.
+const asServer = async () => { await db.exec("reset role"); await db.query("select set_config('request.jwt.claim.sub', '', false)"); };
 const q = async (sql, p) => { try { const r = await db.query(sql, p); return { rows: r.rows, n: r.affectedRows ?? r.rows.length }; } catch (e) { return { err: e.message, rows: [], n: 0 }; } };
 
 const A = (await db.query("select id from units where slug='sao-bernardo-metropole'")).rows[0].id;
@@ -410,8 +413,188 @@ r = await q("insert into storage.objects (bucket_id, name) values ('customer-pho
 await as(recepA);
 r = await q("delete from storage.objects where bucket_id='customer-photos'"); check("recepção apaga fotos de clientes", r.n >= 1 && !r.err, JSON.stringify(r));
 
-console.log("\n[unidade B desativada]");
+console.log("\n[configurações da unidade]");
 await db.exec("reset role");
+r = await q("select cnpj, cep, phones, slot_minutes, logo_path, cover_path from units where id=$1", [A]);
+check("unidade nasce com agenda de 30 min e lista de telefones vazia", r.rows[0]?.slot_minutes === 30 && JSON.stringify(r.rows[0]?.phones) === "[]" && r.rows[0]?.logo_path === null, JSON.stringify(r.rows));
+const SETTINGS = "update units set name=$2, cnpj='11222333000181', cep='09750000', street='Av. Kennedy', street_number='700', city='São Bernardo', state='SP', phones=$3::jsonb, slot_minutes=$4, address='Av. Kennedy, 700', phone='(11) 4002-8922' where id=$1";
+const PHONES = JSON.stringify([{ label: "Recepção", number: "1140028922", whatsapp: false }]);
+await as(recepA);
+r = await q(SETTINGS, [A, "Don Guillermo Metrópole", PHONES, 15]); check("recepção A altera as configurações da própria unidade", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("select name, cnpj, slot_minutes, phones from units where id=$1", [A]); check("alterações gravadas", r.rows[0]?.name === "Don Guillermo Metrópole" && r.rows[0]?.slot_minutes === 15 && r.rows[0]?.phones?.[0]?.label === "Recepção", JSON.stringify(r.rows));
+r = await q(SETTINGS, [B, "Invadida", PHONES, 10]); check("recepção A NÃO altera configurações da unidade B", r.n === 0 || !!r.err, JSON.stringify(r));
+r = await q("update units set slug='novo-slug' where id=$1", [A]); check("recepção A NÃO muda o slug (gatilho)", !!r.err, JSON.stringify(r));
+r = await q("update units set is_active=false where id=$1", [A]); check("recepção A NÃO desativa a própria unidade (gatilho)", !!r.err, JSON.stringify(r));
+r = await q("update units set deleted_at=now() where id=$1", [A]); check("recepção A NÃO exclui a própria unidade (gatilho)", !!r.err, JSON.stringify(r));
+r = await q("update units set name='Outro nome', slug=slug where id=$1", [A]); check("atualizar com o slug igual é permitido", r.n === 1 && !r.err, JSON.stringify(r));
+for (const [titulo, sql] of [
+  ["tempo da agenda fora da lista (7 min)", "update units set slot_minutes=7 where id=$1"],
+  ["tempo da agenda zero", "update units set slot_minutes=0 where id=$1"],
+  ["tempo da agenda de 45 min", "update units set slot_minutes=45 where id=$1"],
+  ["CNPJ com formato inválido", "update units set cnpj='123' where id=$1"],
+  ["CNPJ com máscara", "update units set cnpj='11.222.333/0001-81' where id=$1"],
+  ["CEP com 7 dígitos", "update units set cep='1234567' where id=$1"],
+  ["UF com 3 letras", "update units set state='SPX' where id=$1"],
+  ["UF em minúsculas", "update units set state='sp' where id=$1"],
+  ["telefones que não é lista", `update units set phones='{"a":1}'::jsonb where id=$1`],
+  ["mais de 5 telefones", `update units set phones='[1,2,3,4,5,6]'::jsonb where id=$1`],
+  ["logo fora da pasta da unidade", `update units set logo_path='${B}/${NEW()}.webp' where id=$1`],
+  ["capa fora da pasta da unidade", `update units set cover_path='${B}/${NEW()}.webp' where id=$1`],
+]) {
+  r = await q(sql, [A]); check(`rejeita ${titulo}`, !!r.err, JSON.stringify(r));
+}
+const LOGO = `${A}/${NEW()}.webp`;
+r = await q("update units set logo_path=$2, cover_path=$3 where id=$1", [A, LOGO, `${A}/${NEW()}.jpg`]); check("aceita logo e capa dentro da pasta da unidade", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("update units set cnpj='1A222333000181' where id=$1", [A]); check("aceita CNPJ alfanumérico (12 primeiras posições)", r.n === 1 && !r.err, JSON.stringify(r));
+
+await as(barbA);
+r = await q("update units set name='Hack', slot_minutes=5 where id=$1", [A]); check("barbeiro NÃO altera configurações", r.n === 0 || !!r.err, JSON.stringify(r));
+r = await q("select slot_minutes, phones from units where id=$1", [A]); check("barbeiro lê o tempo da agenda e os telefones da unidade", r.rows.length === 1 && r.rows[0].slot_minutes === 15, JSON.stringify(r.rows));
+await as(nobody);
+r = await q("update units set name='Hack' where id=$1", [A]); check("usuário sem papel NÃO altera configurações", r.n === 0 || !!r.err);
+await as(null);
+r = await q("update units set name='Hack' where id=$1", [A]); check("anônimo NÃO altera configurações", r.n === 0 || !!r.err);
+
+await as(adm);
+r = await q("update units set slot_minutes=20, slug='sao-bernardo-metropole' where id=$1", [A]); check("admin altera configurações da unidade", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("update units set is_active=true where id=$1", [B]); check("admin ainda altera a situação (is_active) das unidades", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("update units set slug='slug-do-admin-1' where id=$1", [B]); check("admin pode alterar o slug (a tela não oferece)", r.n === 1 && !r.err, JSON.stringify(r));
+await asServer();
+await db.query("update units set slug='outra-unidade' where id=$1", [B]);
+r = await q("update units set is_active=true where id=$1", [B]); check("sem sessão de usuário (servidor/service_role) o gatilho não bloqueia", !r.err, JSON.stringify(r));
+
+console.log("\n[logo e capa das unidades (storage)]");
+const UA = (n = NEW()) => `${A}/${n}.webp`;
+await as(recepA);
+r = await q("insert into storage.objects (bucket_id, name) values ('unit-assets', $1)", [UA()]); check("recepção A envia logo/capa na pasta da unidade A", !r.err, r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('unit-assets', $1)", [`${B}/${NEW()}.webp`]); check("recepção A NÃO envia na pasta da unidade B", !!r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('unit-assets', $1)", [`${NEW()}.webp`]); check("arquivo sem pasta de unidade é rejeitado", !!r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('unit-assets', $1)", [`${A}/${NEW()}.gif`]); check("extensão fora de webp/jpg/png é rejeitada", !!r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('unit-assets', $1)", [`${A}/logo.webp`]); check("nome que não é UUID é rejeitado", !!r.err);
+r = await q("insert into storage.objects (bucket_id, name) values ('unit-assets', $1)", [`${A}/../${B}/${NEW()}.webp`]); check("caminho com ../ é rejeitado", !!r.err);
+r = await q("select name from storage.objects where bucket_id='unit-assets'"); check("recepção A lista o que enviou", r.rows.length === 1, r.rows.length);
+await as(recepB);
+r = await q("select name from storage.objects where bucket_id='unit-assets'"); check("recepção B NÃO lista arquivos da unidade A", r.rows.length === 0, r.rows.length);
+r = await q("delete from storage.objects where bucket_id='unit-assets'"); check("recepção B NÃO apaga arquivos da unidade A", r.n === 0 || !!r.err, JSON.stringify(r));
+await as(barbA);
+r = await q("insert into storage.objects (bucket_id, name) values ('unit-assets', $1)", [UA()]); check("barbeiro NÃO envia logo/capa", !!r.err);
+await as(nobody);
+r = await q("insert into storage.objects (bucket_id, name) values ('unit-assets', $1)", [UA()]); check("usuário sem papel NÃO envia logo/capa", !!r.err);
+await as(adm);
+r = await q("insert into storage.objects (bucket_id, name) values ('unit-assets', $1)", [`${B}/${NEW()}.png`]); check("admin envia logo/capa em qualquer unidade", !r.err, r.err);
+await as(recepA);
+r = await q("delete from storage.objects where bucket_id='unit-assets'"); check("recepção A apaga os arquivos da própria unidade", r.n === 1 && !r.err, JSON.stringify(r));
+await db.exec("reset role");
+r = await q("select public, file_size_limit from storage.buckets where id='unit-assets'"); check("bucket unit-assets: leitura pública e limite de 2 MB", r.rows[0]?.public === true && Number(r.rows[0]?.file_size_limit) === 2097152, JSON.stringify(r.rows));
+
+console.log("\n[agenda: agendamentos e bloqueios]");
+await asServer();
+const bA2 = (await db.query("insert into barbers (unit_id, full_name, display_name) values ($1,'Carlos Lima','Carlos') returning id", [A])).rows[0].id;
+const sAg = (await db.query("insert into services (unit_id, name, category, duration_minutes, price_cents) values ($1,'Corte agenda','cabelo',30,4500) returning id", [A])).rows[0].id;
+const T = (h, m = 0) => `2026-10-20T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00Z`;
+const APPT = "insert into appointments (unit_id, barber_id, customer_name, customer_phone, starts_at, ends_at) values ($1,$2,$3,$4,$5,$6) returning id, created_by, created_by_name, kind, status";
+const BLOCK = "insert into appointments (unit_id, barber_id, kind, starts_at, ends_at, notes) values ($1,$2,'block',$3,$4,$5) returning id";
+const SVC = [{ service_id: sAg, name: "Corte", duration_minutes: 30, price_cents: 4500 }, { service_id: sAg, name: "Barba", duration_minutes: 20, price_cents: 3000 }];
+const DATA = (o = {}) => JSON.stringify({ unit_id: A, barber_id: bA, customer_name: "Cliente Teste", customer_phone: "11999990000", starts_at: T(13), ends_at: T(14), notes: "obs", ...o });
+const SAVE = "select public.save_appointment($1::uuid, $2::jsonb, $3::jsonb) as id";
+
+await as(recepA);
+r = await q(APPT, [A, bA, "Cliente Um", "11999990001", T(13), T(14)]);
+check("recepção A cria agendamento na própria unidade", !r.err && r.rows.length === 1, r.err);
+const apA = r.rows[0]?.id;
+check("autor é preenchido pela sessão (created_by)", r.rows[0]?.created_by === recepA, JSON.stringify(r.rows[0]));
+check("nome do autor gravado", !!r.rows[0]?.created_by_name, JSON.stringify(r.rows[0]));
+check("status inicial é 'agendado'", r.rows[0]?.status === "agendado");
+r = await q(APPT, [A, bA, "Fraudador", "11999990001", T(13, 30), T(14, 30)]); check("sobreposição parcial para o mesmo profissional é rejeitada (23P01)", !!r.err && /conflicting|exclusion/i.test(r.err), r.err);
+r = await q(APPT, [A, bA, "Dentro", "11999990001", T(13, 15), T(13, 45)]); check("agendamento dentro de outro é rejeitado", !!r.err);
+r = await q(APPT, [A, bA, "Colado", "11999990001", T(14), T(14, 30)]); check("agendamento colado (começa quando o outro termina) é aceito", !r.err, r.err);
+r = await q(APPT, [A, bA, "Antes", "11999990001", T(12, 30), T(13)]); check("agendamento que termina quando o outro começa é aceito", !r.err, r.err);
+r = await q(APPT, [A, bA2, "Outro prof", "11999990001", T(13), T(14)]); check("outro profissional pode atender no mesmo horário", !r.err, r.err);
+r = await q(APPT, [A, bA, "Fim antes", "11999990001", T(16), T(15)]); check("fim antes do início é rejeitado", !!r.err);
+r = await q(APPT, [A, bA, "Longo", "11999990001", T(17), "2026-10-21T06:00:00Z"]); check("duração acima de 12 h é rejeitada", !!r.err);
+r = await q(APPT, [A, bA, "X", "11999990001", T(18), T(19)]); check("nome do cliente com 1 letra é rejeitado", !!r.err);
+r = await q(APPT, [A, bA, "Telefone ruim", "123", T(18), T(19)]); check("telefone inválido é rejeitado", !!r.err);
+r = await q(APPT, [A, bB, "Prof de B", "11999990001", T(18), T(19)]); check("profissional de outra unidade é rejeitado (FK composta)", !!r.err);
+r = await q(APPT, [B, bB, "Unidade B", "11999990001", T(13), T(14)]); check("recepção A NÃO cria agendamento na unidade B", !!r.err);
+r = await q("insert into appointments (unit_id, barber_id, starts_at, ends_at) values ($1,$2,$3,$4)", [A, bA, T(19), T(20)]); check("agendamento sem nome de cliente é rejeitado", !!r.err);
+r = await q("insert into appointments (unit_id, barber_id, created_by, customer_name, starts_at, ends_at) values ($1,$2,$3,'Fulano',$4,$5)", [A, bA, barbA, T(19), T(20)]);
+check("NÃO grava autor direto (sem privilégio de coluna; o trigger define)", !!r.err);
+
+console.log("  -- bloqueios");
+r = await q(BLOCK, [A, bA, T(15), T(16), "Médico"]); check("recepção A cria bloqueio", !r.err && r.rows.length === 1, r.err);
+const blkA = r.rows[0]?.id;
+r = await q(APPT, [A, bA, "Sobre bloqueio", "11999990001", T(15, 30), T(16, 30)]); check("agendamento sobre bloqueio é rejeitado", !!r.err);
+r = await q(BLOCK, [A, bA, T(15, 30), T(16, 30), "Outro"]); check("bloqueio sobre bloqueio é rejeitado", !!r.err);
+r = await q(BLOCK, [A, bA, T(13), T(14), "Sobre agendamento"]); check("bloqueio sobre agendamento é rejeitado", !!r.err);
+r = await q("insert into appointments (unit_id, barber_id, kind, customer_name, starts_at, ends_at) values ($1,$2,'block','Fulano',$3,$4)", [A, bA, T(21), T(22)]); check("bloqueio com nome de cliente é rejeitado", !!r.err);
+r = await q("insert into appointments (unit_id, barber_id, kind, status, starts_at, ends_at) values ($1,$2,'block','concluido',$3,$4)", [A, bA, T(21), T(22)]); check("bloqueio com status diferente de 'agendado' é rejeitado", !!r.err);
+r = await q("delete from appointments where id=$1", [blkA]); check("recepção A remove bloqueio", r.n === 1 && !r.err, JSON.stringify(r));
+r = await q("delete from appointments where id=$1", [apA]); check("agendamento NÃO pode ser apagado (só cancelado)", r.n === 0 || !!r.err);
+
+console.log("  -- status");
+r = await q("update appointments set status='cancelado' where id=$1", [apA]); check("cancelar agendamento libera o horário", r.n === 1 && !r.err, r.err);
+r = await q(APPT, [A, bA, "Ocupa de novo", "11999990001", T(13), T(14)]); check("horário liberado aceita outro agendamento", !r.err, r.err);
+const apA2 = r.rows[0]?.id;
+r = await q("update appointments set status='agendado' where id=$1", [apA]); check("reabrir sobre horário ocupado é rejeitado", !!r.err);
+r = await q("update appointments set status='faltou' where id=$1", [apA2]); check("marcar falta libera o horário", r.n === 1 && !r.err);
+r = await q("update appointments set status='agendado' where id=$1", [apA2]); check("reabrir com horário livre funciona", r.n === 1 && !r.err, r.err);
+r = await q("update appointments set status='inventado' where id=$1", [apA2]); check("status inválido é rejeitado", !!r.err);
+r = await q("update appointments set unit_id=$1 where id=$2", [B, apA2]); check("NÃO muda unit_id (sem privilégio de coluna)", !!r.err);
+r = await q("update appointments set kind='block' where id=$1", [apA2]); check("NÃO muda o tipo (sem privilégio de coluna)", !!r.err);
+r = await q("update appointments set created_by=$1 where id=$2", [barbA, apA2]); check("NÃO muda o autor (sem privilégio de coluna)", !!r.err);
+r = await q("update appointments set starts_at=$1, ends_at=$2 where id=$3", [T(17), T(18), apA2]); check("remarcar para horário livre funciona", r.n === 1 && !r.err, r.err);
+r = await q("update appointments set barber_id=$1 where id=$2", [bB, apA2]); check("NÃO move para profissional de outra unidade", !!r.err);
+r = await q("update appointments set barber_id=$1 where id=$2", [bA2, apA2]); check("troca de profissional na mesma unidade funciona", r.n === 1 && !r.err, r.err);
+
+console.log("  -- save_appointment (atômico)");
+r = await q(SAVE, [null, DATA({ starts_at: T(9), ends_at: T(10) }), JSON.stringify(SVC)]); check("RPC cria agendamento com 2 serviços", !r.err && !!r.rows[0]?.id, r.err);
+const rpcId = r.rows[0]?.id;
+r = await q("select position, name, duration_minutes, price_cents from appointment_services where appointment_id=$1 order by position", [rpcId]);
+check("serviços gravados em ordem com a foto (nome, duração, preço)", r.rows.length === 2 && r.rows[0].name === "Corte" && r.rows[1].position === 1 && r.rows[1].price_cents === 3000, JSON.stringify(r.rows));
+r = await q(SAVE, [null, DATA({ starts_at: T(9, 30), ends_at: T(10, 30), customer_name: "Conflito" }), JSON.stringify(SVC)]); check("RPC em horário ocupado falha", !!r.err);
+r = await q("select count(*)::int c from appointments where customer_name='Conflito'"); check("RPC com conflito não deixa agendamento órfão", r.rows[0].c === 0);
+r = await q(SAVE, [rpcId, DATA({ starts_at: T(9, 15), ends_at: T(10, 15), customer_name: "Editado" }), JSON.stringify([SVC[0]])]); check("RPC edita o próprio agendamento (mesmo se sobrepõe a si mesmo)", !r.err, r.err);
+r = await q("select count(*)::int c, max(customer_name) n from appointment_services s join appointments a on a.id=s.appointment_id where a.id=$1", [rpcId]); check("edição troca os serviços (1 restante) e o nome", r.rows[0].c === 1 && r.rows[0].n === "Editado", JSON.stringify(r.rows));
+r = await q(SAVE, [rpcId, DATA({ starts_at: T(9, 15), ends_at: T(10, 15) }), "[]"]); check("RPC sem serviços é rejeitada", !!r.err);
+r = await q("select count(*)::int c from appointment_services where appointment_id=$1", [rpcId]); check("RPC rejeitada não apaga os serviços existentes", r.rows[0].c === 1);
+r = await q(SAVE, [null, DATA({ unit_id: B, barber_id: bB, starts_at: T(9), ends_at: T(10) }), JSON.stringify(SVC)]); check("RPC NÃO cria na unidade B (RLS)", !!r.err);
+r = await q(SAVE, [null, DATA({ starts_at: T(8), ends_at: T(8, 30) }), JSON.stringify([{ ...SVC[0], service_id: sB }])]); check("RPC com serviço de outra unidade é rejeitada (FK composta)", !!r.err);
+r = await q(SAVE, [crypto.randomUUID(), DATA(), JSON.stringify(SVC)]); check("RPC com id inexistente falha", !!r.err);
+r = await q("delete from appointment_services where appointment_id=$1", [rpcId]); check("recepção A apaga os serviços (usado pela RPC ao editar)", !r.err);
+r = await q("update appointment_services set price_cents=1 where appointment_id=$1", [rpcId]); check("serviços do agendamento NÃO são editados direto (sem UPDATE)", !!r.err || r.n === 0);
+await q(SAVE, [rpcId, DATA({ starts_at: T(9, 15), ends_at: T(10, 15), customer_name: "Editado" }), JSON.stringify(SVC)]);
+
+console.log("  -- visibilidade");
+r = await q("select id from appointments"); check("recepção A só vê a unidade A", r.rows.length > 0 && (await q("select id from appointments where unit_id=$1", [B])).rows.length === 0);
+await asServer();
+await db.query("insert into appointments (unit_id, barber_id, customer_name, starts_at, ends_at) values ($1,$2,'Da unidade B',$3,$4)", [B, bB, T(13), T(14)]);
+await db.query("insert into appointments (unit_id, barber_id, kind, starts_at, ends_at) values ($1,$2,'block',$3,$4)", [A, bA2, T(22), T(23)]);
+await as(recepA);
+r = await q("select id from appointments where customer_name='Da unidade B'"); check("recepção A NÃO vê agendamento da unidade B", r.rows.length === 0);
+r = await q("update appointments set status='cancelado' where customer_name='Da unidade B'"); check("recepção A NÃO altera agendamento da unidade B", r.n === 0);
+await as(recepB);
+r = await q("select id from appointments where customer_name='Da unidade B'"); check("recepção B vê o agendamento da própria unidade", r.rows.length === 1);
+r = await q("select id from appointments where unit_id=$1", [A]); check("recepção B NÃO vê a unidade A", r.rows.length === 0);
+await as(barbA);
+r = await q("select customer_name, barber_id from appointments"); check("barbeiro A vê só os próprios horários (profissional João)", r.rows.length > 0 && r.rows.every((x) => x.barber_id === bA), JSON.stringify(r.rows.length));
+r = await q("select id from appointments where barber_id=$1", [bA2]); check("barbeiro A NÃO vê os horários de outro profissional", r.rows.length === 0);
+r = await q("select s.name from appointment_services s"); check("barbeiro A vê os serviços dos próprios agendamentos", r.rows.length > 0 && !r.err, r.err);
+r = await q(APPT, [A, bA, "Barbeiro cria", "11999990001", T(23), T(23, 30)]); check("barbeiro NÃO cria agendamento", !!r.err);
+r = await q("update appointments set status='concluido' where barber_id=$1", [bA]); check("barbeiro NÃO altera agendamento (nesta etapa)", r.n === 0 || !!r.err);
+r = await q("delete from appointments where kind='block'"); check("barbeiro NÃO apaga bloqueio", r.n === 0 || !!r.err);
+await as(nobody);
+r = await q("select id from appointments"); check("usuário sem papel não vê agendamentos", r.rows.length === 0);
+await as(null);
+r = await q("select id from appointments"); check("anônimo não lê agendamentos", !!r.err || r.rows.length === 0);
+r = await q("select id from appointment_services"); check("anônimo não lê serviços dos agendamentos", !!r.err || r.rows.length === 0);
+await as(adm);
+r = await q("select id from appointments"); check("admin vê agendamentos de todas as unidades", r.rows.length > 0 && (await q("select id from appointments where unit_id=$1", [B])).rows.length > 0);
+r = await q(APPT, [B, bB, "Admin cria", "11999990001", T(10), T(11)]); check("admin cria agendamento em qualquer unidade", !r.err, r.err);
+await asServer();
+r = await q("delete from barbers where id=$1", [bA2]); check("apagar profissional leva seus agendamentos junto (cascade)", !r.err && (await q("select id from appointments where barber_id=$1", [bA2])).rows.length === 0, r.err);
+
+console.log("\n[unidade B desativada]");
+await asServer();
 await db.query("update units set is_active=false where id=$1", [B]);
 await as(recepB);
 r = await q("select id from units"); check("recepção B perde acesso", r.rows.length === 0);

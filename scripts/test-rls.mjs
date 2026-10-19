@@ -28,7 +28,7 @@ async function login(email, password) {
   return c;
 }
 
-const created = { users: [], units: [], photos: [], images: [], customers: [], customerPhotos: [] };
+const created = { users: [], units: [], photos: [], images: [], customers: [], customerPhotos: [], unitAssets: [] };
 
 try {
   // ---- Preparação (service_role) ----
@@ -105,7 +105,7 @@ try {
     const upd = await c.from("units").update({ name: "Hackeada" }).eq("id", unitB.id).select();
     check("NÃO altera a unidade B", !upd.data?.length);
     const updA = await c.from("units").update({ name: "Renomeada" }).eq("id", unitA.id).select();
-    check("NÃO altera nem a própria unidade (só admin)", !updA.data?.length);
+    check("pode renomear a própria unidade (Configurações; slug e situação ficam com o admin)", updA.data?.length === 1, updA.error?.message);
 
     const esc = await c
       .from("unit_members")
@@ -575,7 +575,161 @@ try {
     check("admin envia foto de cliente", !admUp.error, admUp.error?.message);
   }
 
-  // ---- 8) Unidade desativada ----
+  // ---- 8) Configurações da unidade (recepção edita; slug/situação só o servidor/admin) ----
+  console.log("\n[configurações da unidade]");
+  {
+    const rA = await login(people.recepA.email, people.recepA.password);
+    const rB = await login(people.recepB.email, people.recepB.password);
+    const bc = await login(people.barbA.email, people.barbA.password);
+    const adm = await login(people.admin.email, people.admin.password);
+    const anon = anonClient();
+    const uuid = () => crypto.randomUUID();
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const assets = (c) => c.storage.from("unit-assets");
+
+    const settings = {
+      name: `Teste RLS ${tag} (config)`,
+      cnpj: "11222333000181",
+      cep: "09750000",
+      street: "Av. Kennedy",
+      street_number: "700",
+      city: "São Bernardo do Campo",
+      state: "SP",
+      phones: [{ label: "Recepção", number: "1140028922", whatsapp: true }],
+      slot_minutes: 15,
+    };
+    const up = await rA.from("units").update(settings).eq("id", unitA.id).select("id");
+    check("recepção A altera as configurações da própria unidade", up.data?.length === 1, up.error?.message);
+    const back = await rA.from("units").select("name, cnpj, slot_minutes, phones").eq("id", unitA.id).single();
+    check("alterações gravadas (agenda de 15 min, telefones)", back.data?.slot_minutes === 15 && back.data?.phones?.[0]?.whatsapp === true, JSON.stringify(back.data));
+
+    const other = await rA.from("units").update({ slot_minutes: 10 }).eq("id", unitB.id).select("id");
+    check("recepção A NÃO altera a unidade B", !other.data?.length);
+    const slug = await rA.from("units").update({ slug: `x-${tag}-novo` }).eq("id", unitA.id).select("id");
+    check("recepção A NÃO muda o slug", !!slug.error || !slug.data?.length, slug.error?.message);
+    const act = await rA.from("units").update({ is_active: false }).eq("id", unitA.id).select("id");
+    check("recepção A NÃO desativa a própria unidade", !!act.error || !act.data?.length, act.error?.message);
+    const del = await rA.from("units").update({ deleted_at: new Date().toISOString() }).eq("id", unitA.id).select("id");
+    check("recepção A NÃO exclui a própria unidade", !!del.error || !del.data?.length, del.error?.message);
+
+    for (const [titulo, patch] of [
+      ["tempo da agenda fora da lista", { slot_minutes: 7 }],
+      ["CNPJ inválido", { cnpj: "123" }],
+      ["mais de 5 telefones", { phones: [1, 2, 3, 4, 5, 6] }],
+      ["logo fora da pasta da unidade", { logo_path: `${unitB.id}/${uuid()}.webp` }],
+    ]) {
+      const r = await rA.from("units").update(patch).eq("id", unitA.id).select("id");
+      check(`rejeita ${titulo}`, !!r.error, JSON.stringify(r.data));
+    }
+
+    const bu = await bc.from("units").update({ name: "Hack" }).eq("id", unitA.id).select("id");
+    check("barbeiro NÃO altera configurações", !bu.data?.length);
+    const bRead = await bc.from("units").select("slot_minutes, phones").eq("id", unitA.id).single();
+    check("barbeiro lê o tempo da agenda e os telefones", bRead.data?.slot_minutes === 15, bRead.error?.message);
+    const au = await anon.from("units").update({ name: "Hack" }).eq("id", unitA.id).select("id");
+    check("anônimo NÃO altera configurações", !!au.error || !au.data?.length);
+
+    const admUp = await adm.from("units").update({ slot_minutes: 20 }).eq("id", unitA.id).select("id");
+    check("admin altera as configurações de qualquer unidade", admUp.data?.length === 1, admUp.error?.message);
+    const srv = await admin.from("units").update({ is_active: true }).eq("id", unitA.id).select("id");
+    check("servidor (service_role) segue podendo mudar a situação da unidade", srv.data?.length === 1, srv.error?.message);
+
+    // Logo e capa (Storage)
+    const mine = `${unitA.id}/${uuid()}.png`;
+    created.unitAssets.push(mine);
+    const upA = await assets(rA).upload(mine, png, { contentType: "image/png" });
+    check("recepção A envia logo/capa na pasta da própria unidade", !upA.error, upA.error?.message);
+    const saved = await rA.from("units").update({ logo_path: mine }).eq("id", unitA.id).select("id");
+    check("recepção A salva o caminho da logo na unidade", saved.data?.length === 1, saved.error?.message);
+    const res = await fetch(assets(anon).getPublicUrl(mine).data.publicUrl);
+    check("logo abre por URL pública, sem login", res.status === 200, "status " + res.status);
+    const inB = `${unitB.id}/${uuid()}.png`;
+    const upB = await assets(rA).upload(inB, png, { contentType: "image/png" });
+    check("recepção A NÃO envia na pasta da unidade B", !!upB.error);
+    const noFolder = await assets(rA).upload(`${uuid()}.png`, png, { contentType: "image/png" });
+    check("arquivo sem pasta de unidade é rejeitado", !!noFolder.error);
+    const gif = await assets(rA).upload(`${unitA.id}/${uuid()}.gif`, png, { contentType: "image/gif" });
+    check("tipo fora de webp/jpg/png é rejeitado", !!gif.error);
+    const big = await assets(rA).upload(`${unitA.id}/${uuid()}.png`, Buffer.alloc(2 * 1024 * 1024 + 1), { contentType: "image/png" });
+    check("arquivo acima de 2 MB é rejeitado", !!big.error);
+    const bUp = await assets(bc).upload(`${unitA.id}/${uuid()}.png`, png, { contentType: "image/png" });
+    check("barbeiro NÃO envia logo/capa", !!bUp.error);
+    const rm = await assets(rB).remove([mine]);
+    const still = await admin.storage.from("unit-assets").list(unitA.id);
+    check("recepção B NÃO apaga arquivo da unidade A", still.data?.some((f) => mine.endsWith(f.name)) === true, JSON.stringify(rm.error ?? rm.data));
+    const rmOwn = await assets(rA).remove([mine]);
+    const gone = await admin.storage.from("unit-assets").list(unitA.id);
+    check("recepção A apaga o arquivo da própria unidade", !rmOwn.error && !gone.data?.some((f) => mine.endsWith(f.name)), rmOwn.error?.message);
+    await admin.from("units").update({ logo_path: null }).eq("id", unitA.id);
+  }
+
+  // ---- 9) Agenda ----
+  console.log("\n[agenda: agendamentos e bloqueios]");
+  {
+    const rA = await login(people.recepA.email, people.recepA.password);
+    const rB = await login(people.recepB.email, people.recepB.password);
+    const bc = await login(people.barbA.email, people.barbA.password);
+    const adm = await login(people.admin.email, people.admin.password);
+    const anon = anonClient();
+    const one = async (q) => (await q).data?.[0];
+
+    let own = await one(admin.from("barbers").select("id").eq("user_id", people.barbA.id));
+    if (!own) own = (await admin.from("barbers").insert({ unit_id: unitA.id, user_id: people.barbA.id, full_name: "Agenda Própria", display_name: "Própria" }).select("id")).data[0];
+    const other = (await admin.from("barbers").insert({ unit_id: unitA.id, full_name: "Agenda Outro", display_name: "Outro" }).select("id")).data[0];
+    const bB = (await admin.from("barbers").insert({ unit_id: unitB.id, full_name: "Agenda B", display_name: "AgB" }).select("id")).data[0];
+    const svc = (await admin.from("services").insert({ unit_id: unitA.id, name: "Agenda " + tag, category: "cabelo", duration_minutes: 30, price_cents: 4000 }).select("id")).data[0];
+    const at = (h, m = 0) => new Date(Date.UTC(2030, 0, 15, h, m)).toISOString();
+    const lines = [{ service_id: svc.id, name: "Agenda", duration_minutes: 30, price_cents: 4000 }];
+    const data = (o = {}) => ({ unit_id: unitA.id, barber_id: own.id, customer_name: "Cliente RLS", customer_phone: "11999990000", starts_at: at(13), ends_at: at(13, 30), ...o });
+
+    const s1 = await rA.rpc("save_appointment", { p_id: null, p_data: data(), p_services: lines });
+    check("recepção A agenda pela RPC (agendamento + serviços)", !s1.error && !!s1.data, s1.error?.message);
+    const apId = s1.data;
+    const row = await one(admin.from("appointments").select("created_by, created_by_name").eq("id", apId));
+    check("autor vem da sessão", row?.created_by === people.recepA.id && !!row?.created_by_name);
+    const clash = await rA.rpc("save_appointment", { p_id: null, p_data: data({ starts_at: at(13, 15), ends_at: at(13, 45), customer_name: "Conflito RLS" }), p_services: lines });
+    check("horário sobreposto é recusado (23P01)", clash.error?.code === "23P01", JSON.stringify(clash.error));
+    const orphan = await admin.from("appointments").select("id").eq("customer_name", "Conflito RLS");
+    check("conflito não deixa agendamento sem serviços", !orphan.data?.length);
+    const block = await rA.from("appointments").insert({ unit_id: unitA.id, barber_id: own.id, kind: "block", starts_at: at(14), ends_at: at(15), notes: "RLS" }).select("id");
+    check("recepção A cria bloqueio", !block.error, block.error?.message);
+    const overBlock = await rA.rpc("save_appointment", { p_id: null, p_data: data({ starts_at: at(14, 30), ends_at: at(15) }), p_services: lines });
+    check("agendamento sobre bloqueio é recusado", overBlock.error?.code === "23P01");
+    const inB = await rA.rpc("save_appointment", { p_id: null, p_data: data({ unit_id: unitB.id, barber_id: bB.id }), p_services: lines });
+    check("recepção A NÃO agenda na unidade B", !!inB.error);
+    const delAp = await rA.from("appointments").delete().eq("id", apId).select("id");
+    check("agendamento NÃO é apagado (só cancelado)", !delAp.data?.length);
+    const cancel = await rA.from("appointments").update({ status: "cancelado" }).eq("id", apId).select("id");
+    check("recepção A cancela", cancel.data?.length === 1, cancel.error?.message);
+    const reuse = await rA.rpc("save_appointment", { p_id: null, p_data: data({ customer_name: "Reuso RLS" }), p_services: lines });
+    check("cancelado libera o horário", !reuse.error, reuse.error?.message);
+    const forged = await rA.from("appointments").update({ unit_id: unitB.id }).eq("id", reuse.data).select("id");
+    check("NÃO muda a unidade do agendamento", !!forged.error || !forged.data?.length);
+    await admin.from("appointments").insert({ unit_id: unitA.id, barber_id: other.id, customer_name: "Do outro", starts_at: at(16), ends_at: at(16, 30) });
+
+    const seeB = await rB.from("appointments").select("id").eq("unit_id", unitA.id);
+    check("recepção B NÃO vê a agenda da unidade A", !seeB.data?.length);
+    const updB = await rB.from("appointments").update({ status: "cancelado" }).eq("id", reuse.data).select("id");
+    check("recepção B NÃO altera agendamento da unidade A", !updB.data?.length);
+    const mine = await bc.from("appointments").select("barber_id, appointment_services(name)");
+    check("barbeiro vê só os próprios horários", (mine.data ?? []).length > 0 && mine.data.every((x) => x.barber_id === own.id), mine.error?.message);
+    check("barbeiro vê os serviços dos próprios agendamentos", (mine.data ?? []).some((x) => x.appointment_services?.length), JSON.stringify(mine.data?.[0]));
+    const bIns = await bc.rpc("save_appointment", { p_id: null, p_data: data({ starts_at: at(18), ends_at: at(18, 30) }), p_services: lines });
+    check("barbeiro NÃO cria agendamento", !!bIns.error);
+    const bUpd = await bc.from("appointments").update({ status: "concluido" }).eq("id", reuse.data).select("id");
+    check("barbeiro NÃO altera agendamento", !!bUpd.error || !bUpd.data?.length);
+    const an = await anon.from("appointments").select("id");
+    check("anônimo NÃO lê agendamentos", !an.data?.length);
+    const admAll = await adm.from("appointments").select("id").eq("unit_id", unitA.id);
+    check("admin vê a agenda da unidade", (admAll.data ?? []).length >= 3, admAll.error?.message);
+    const delBlock = await rA.from("appointments").delete().eq("id", block.data?.[0]?.id).select("id");
+    check("recepção A remove bloqueio", delBlock.data?.length === 1, delBlock.error?.message);
+  }
+
+  // ---- 10) Unidade desativada ----
   console.log("\n[unidade B desativada]");
   {
     await admin.from("units").update({ is_active: false }).eq("id", unitB.id);
@@ -596,6 +750,8 @@ try {
   if (created.photos.length) await admin.storage.from("barber-photos").remove(created.photos).catch(() => {});
   if (created.images.length) await admin.storage.from("service-images").remove(created.images).catch(() => {});
   if (created.customerPhotos.length) await admin.storage.from("customer-photos").remove(created.customerPhotos).catch(() => {});
+  if (created.unitAssets.length) await admin.storage.from("unit-assets").remove(created.unitAssets).catch(() => {});
+  for (const id of created.units) await admin.from("appointments").delete().eq("unit_id", id);
   if (created.customers.length) await admin.from("customers").delete().in("id", created.customers);
   for (const id of created.users) await admin.auth.admin.deleteUser(id).catch(() => {});
   for (const id of created.units) await admin.from("units").delete().eq("id", id);

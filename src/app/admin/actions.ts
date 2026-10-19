@@ -12,7 +12,6 @@ import {
   inviteReceptionSchema,
   parseAccessPassword,
   parseOpeningHours,
-  unitDetailsSchema,
 } from "@/lib/validation/unit";
 
 const ONE_HOUR = 60 * 60_000;
@@ -123,53 +122,6 @@ export async function createUnitAction(
     createdSlug: unit.slug,
     message: `Unidade criada. ${access.message}`,
   };
-}
-
-/** Atualiza dados da unidade (o slug não muda: ele é o endereço da unidade). */
-export async function updateUnitAction(
-  _prev: AdminFormState,
-  formData: FormData,
-): Promise<AdminFormState> {
-  const ctx = await requireNetworkAdmin();
-  const limited = throttled(ctx.userId, "unit-write", 120);
-  if (limited) return limited;
-
-  const id = str(formData, "id");
-  if (!UUID.test(id)) return { status: "error", message: GENERIC };
-
-  const parsed = unitDetailsSchema.safeParse({
-    name: str(formData, "name"),
-    address: str(formData, "address"),
-    phone: str(formData, "phone"),
-  });
-  const hours = parseOpeningHours(formData);
-  const fieldErrors: Record<string, string> = {
-    ...(parsed.success ? {} : toFieldErrors(parsed.error)),
-    ...(hours.ok ? {} : hours.errors),
-  };
-  if (!parsed.success || !hours.ok) {
-    return { status: "error", message: "Confira os campos destacados.", fieldErrors };
-  }
-
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("units")
-    .update({
-      name: parsed.data.name,
-      address: parsed.data.address,
-      phone: parsed.data.phone,
-      opening_hours: hours.value,
-    })
-    .eq("id", id)
-    .is("deleted_at", null)
-    .select("id");
-
-  if (error || !data?.length) {
-    console.error("[admin] update unit:", error?.code);
-    return { status: "error", message: error ? GENERIC : "Unidade não encontrada." };
-  }
-  revalidatePath("/admin", "layout");
-  return { status: "success", message: "Alterações salvas." };
 }
 
 /** Ativa ou desativa a unidade (desativada: recepção e barbeiros perdem o acesso). */
