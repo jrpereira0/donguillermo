@@ -148,12 +148,16 @@ export function Select({
         <SelectPrimitive.Content
           position="popper"
           side={searchable ? place.side : undefined}
-          avoidCollisions={!searchable}
+          align="start"
+          avoidCollisions={button || !searchable}
           sideOffset={6}
           collisionPadding={12}
           className={cn(
             "select-luxe z-[80] w-[var(--radix-select-trigger-width)] min-w-[12rem] overflow-hidden rounded-xl border border-gold/40 bg-gradient-to-b from-[#2a2a2a] to-[#171717] p-1.5 text-foreground shadow-[0_24px_60px_-12px_rgb(0_0_0/0.9),inset_0_1px_0_rgb(242_237_228/0.07)]",
             searchable ? "flex flex-col" : "max-h-[min(20rem,var(--radix-select-content-available-height))]",
+            // Menus abertos pelos botões de ação são mais largos que o botão:
+            // nome e preço ficam em uma linha só, sem quebrar a informação.
+            button && "w-[min(32rem,calc(100vw-1.5rem))] min-w-[min(20rem,calc(100vw-1.5rem))]",
           )}
           style={searchable ? { height: place.height } : undefined}
         >
@@ -194,7 +198,7 @@ export function Select({
                 <p className="label-caps px-2 pt-0.5 pb-1 text-[0.6rem] text-gold/80">Primeira opção</p>
                 <SelectPrimitive.Item
                   value={first.value}
-                  className="relative flex cursor-pointer select-none items-center gap-3 rounded-lg border border-gold/40 bg-gold/10 py-2.5 pr-9 pl-3 text-sm text-cream outline-none data-[highlighted]:bg-gold/15"
+                  className="relative flex cursor-pointer items-center gap-3 rounded-lg border border-gold/40 bg-gold/10 py-2.5 pr-9 pl-3 text-sm whitespace-nowrap text-cream outline-none select-none hover:bg-gold/15 data-[highlighted]:bg-gold/15"
                 >
                   {first.icon ? (
                     <span className="flex size-4 shrink-0 text-gold/80" aria-hidden="true">
@@ -212,7 +216,7 @@ export function Select({
               <SelectPrimitive.Item
                 key={v}
                 value={v}
-                className="relative flex cursor-pointer select-none items-center gap-3 rounded-lg py-2.5 pr-9 pl-3 text-base text-muted-foreground outline-none transition-colors data-[highlighted]:bg-gold/10 data-[highlighted]:text-cream data-[state=checked]:text-gold md:text-sm"
+                className="relative flex cursor-pointer items-center gap-3 rounded-lg py-2.5 pr-9 pl-3 text-base whitespace-nowrap text-muted-foreground outline-none transition-colors select-none hover:bg-gold/10 hover:text-cream data-[highlighted]:bg-gold/10 data-[highlighted]:text-cream data-[state=checked]:text-gold md:text-sm"
               >
                 {Icon ? <Icon className="size-4 shrink-0 text-gold/80" aria-hidden="true" /> : null}
                 <SelectPrimitive.ItemText>{label}</SelectPrimitive.ItemText>

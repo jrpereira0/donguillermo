@@ -2,20 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useActionState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Banknote, CreditCard, Minus, Plus, QrCode, Receipt, RotateCcw, Trash2, Wallet } from "lucide-react";
+import { ArrowRight, Banknote, CheckCircle2, Clock3, CreditCard, Layers, Minus, Plus, QrCode, Receipt, RotateCcw, Trash2, TriangleAlert, Wallet } from "lucide-react";
 import { chargeTicketAction, reopenTicketAction, saveTicketAction } from "@/app/u/[slug]/caixa/actions";
 import { FormAlert } from "@/components/auth/form-alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { PAY_METHODS, payMethodLabel, ticketTotals, type PayMethod } from "@/lib/caixa/math";
-import type { CatalogBarber, CatalogProduct, CatalogService, TicketDetail, TicketLine } from "@/lib/caixa/types";
+import type { CatalogBarber, CatalogProduct, CatalogService, TicketDetail, TicketLine, TicketPackageOption, TicketPackageSaleOption } from "@/lib/caixa/types";
 import type { FormState } from "@/lib/validation/auth";
 import { centsToInput, formatBRL, maskMoney, moneyToCents } from "@/lib/validation/service";
 import { cn } from "@/lib/utils";
 
 const idle: FormState = { status: "idle" };
-type PayLine = { method: PayMethod; amount: string; installments: number };
+/** method "" = nenhuma forma escolhida ainda (nunca nasce pré-marcada). */
+type PayLine = { method: PayMethod | ""; amount: string; installments: number };
 type TipLine = { barberId: string; amount: string };
 type Row = TicketLine & { key: string };
 
@@ -50,12 +52,18 @@ function newKey() {
   return crypto.randomUUID();
 }
 
+/** Serviço pelo pacote: vinculado ao pacote do cliente ou ao pacote sendo vendido nesta comanda. */
+const isCovered = (l: TicketLine) => l.kind === "servico" && (!!l.customerPackageId || !!l.packageId);
+const isSale = (l: TicketLine) => l.kind === "pacote";
+
 export function TicketEditor({
   slug,
   ticket,
   services,
   products,
   barbers,
+  packages = [],
+  salePackages = [],
   registerOpen,
   registerDay,
   onCharged,
@@ -68,6 +76,10 @@ export function TicketEditor({
   services: CatalogService[];
   products: CatalogProduct[];
   barbers: CatalogBarber[];
+  /** Pacotes ativos do cliente desta comanda (saldo sem contar esta comanda). */
+  packages?: TicketPackageOption[];
+  /** Catálogo de pacotes vendável nesta comanda. */
+  salePackages?: TicketPackageSaleOption[];
   registerOpen: boolean;
   /** Dia de referência (yyyy-mm-dd) do caixa aberto; a comanda só fecha no caixa do dia dela. */
   registerDay?: string | null;
@@ -94,11 +106,18 @@ export function TicketEditor({
       key: `linha-${i}`,
       kind: l.kind ?? "servico",
       barberId: l.barberId ?? ticket.barberId,
+      customerPackageId: l.customerPackageId ?? null,
+      packageId: l.packageId ?? null,
+      packageName: l.packageName ?? null,
     })),
   );
   const [discountMode, setDiscountMode] = useState<"valor" | "percent">("valor");
   const [discount, setDiscount] = useState(ticket.discountCents ? centsToInput(ticket.discountCents) : "");
   const [discountPct, setDiscountPct] = useState("");
+  /** Desconto de 100%: cobrar exige confirmar que a comanda sai de graça. */
+  const [confirmFree, setConfirmFree] = useState(false);
+  /** Aviso ao tentar fechar sem escolher a forma de pagamento. */
+  const [payAlert, setPayAlert] = useState(false);
   const [tips, setTips] = useState<TipLine[]>(() =>
     ticket.tips.map((t) => ({ barberId: t.barberId, amount: centsToInput(t.amountCents) })),
   );
@@ -116,15 +135,20 @@ export function TicketEditor({
       }));
     }
     const start = ticketTotals(
-      ticket.lines.map((l) => ({ quantity: l.quantity, unitPriceCents: l.unitPriceCents })),
+      ticket.lines.map((l) => ({
+        quantity: l.quantity,
+        unitPriceCents: l.unitPriceCents,
+        packageCovered: isCovered(l),
+      })),
       ticket.discountCents,
       ticket.tipCents,
     );
-    return [{ method: "dinheiro", amount: start.total ? centsToInput(start.total) : "", installments: 1 }];
+    return [{ method: "", amount: start.total ? centsToInput(start.total) : "", installments: 1 }];
   });
   const [payLocked, setPayLocked] = useState(ticket.payments.length > 0);
   const [servicePick, setServicePick] = useState(0);
   const [productPick, setProductPick] = useState(0);
+  const [salePick, setSalePick] = useState(0);
 
   const [saveState, saveAction, savePending] = useActionState(saveTicketAction.bind(null, slug, ticket.id), idle);
   const [chargeState, chargeAction, chargePending] = useActionState(chargeTicketAction.bind(null, slug, ticket.id), idle);
@@ -147,14 +171,34 @@ export function TicketEditor({
     if (saveState.status === "success") onSaved?.(saveState.message ?? "Comanda salva.");
   }, [saveState, onSaved]);
 
-  const subtotalCents = lines.reduce((n, l) => n + l.quantity * l.unitPriceCents, 0);
+  const subtotalCents = lines.reduce((n, l) => n + (isCovered(l) ? 0 : l.quantity * l.unitPriceCents), 0);
+  const coveredCents = lines.reduce((n, l) => n + (isCovered(l) ? l.quantity * l.unitPriceCents : 0), 0);
   const discountCents =
     discountMode === "percent"
       ? percentToCents(discountPct, subtotalCents)
       : Math.min(moneyToCents(discount || "0") ?? 0, Math.max(0, subtotalCents));
+  // O que foi digitado em R$ pode passar do subtotal: o aplicado trava no
+  // subtotal e o campo é corrigido ao sair, com aviso enquanto estiver acima.
+  const discountTypedCents = moneyToCents(discount || "0") ?? 0;
+  const discountOverLimit = discountMode === "valor" && discountTypedCents > Math.max(0, subtotalCents);
   const tipCents = tips.reduce((n, t) => n + (moneyToCents(t.amount) ?? 0), 0);
-  const totals = useMemo(() => ticketTotals(lines, discountCents, tipCents), [lines, discountCents, tipCents]);
+  const totals = useMemo(
+    () =>
+      ticketTotals(
+        lines.map((l) => ({ quantity: l.quantity, unitPriceCents: l.unitPriceCents, packageCovered: isCovered(l) })),
+        discountCents,
+        tipCents,
+      ),
+    [lines, discountCents, tipCents],
+  );
   const afterDiscount = Math.max(0, totals.subtotal - totals.discount);
+  // Zerar SÓ por desconto (item de pacote não entra no subtotal, não dispara).
+  const freeByDiscount = totals.subtotal > 0 && totals.discount >= totals.subtotal;
+
+  // A confirmação de "sair de graça" desarma se desconto ou subtotal mudarem.
+  useEffect(() => {
+    setConfirmFree(false);
+  }, [discountCents, subtotalCents]);
   const ticketBarber = lines.find((l) => l.barberId)?.barberId ?? ticket.barberId ?? "";
 
   function chooseDiscountMode(next: "valor" | "percent") {
@@ -170,39 +214,71 @@ export function TicketEditor({
     setPays((cur) =>
       cur[0] && cur[0].amount === next
         ? cur
-        : [{ method: cur[0]?.method ?? "dinheiro", amount: next, installments: cur[0]?.installments ?? 1 }],
+        : [{ method: cur[0]?.method ?? "", amount: next, installments: cur[0]?.installments ?? 1 }],
     );
   }, [totals.total, payLocked, pays.length]);
 
   const payloadItems = JSON.stringify(
     lines.map((l) => ({
       kind: l.kind,
-      serviceId: l.kind === "produto" ? null : l.serviceId,
+      serviceId: l.kind === "servico" ? l.serviceId : null,
       name: l.name.trim(),
       quantity: l.quantity,
       unitPriceCents: l.unitPriceCents,
       barberId: l.barberId,
+      customerPackageId: l.customerPackageId,
+      packageId: l.packageId,
     })),
   );
+  const paid = totals.total === 0 ? 0 : pays.reduce((n, p) => n + (moneyToCents(p.amount) ?? 0), 0);
+  const rest = totals.total - paid;
+  const paidNonCash = pays
+    .filter((p) => p.method && p.method !== "dinheiro")
+    .reduce((n, p) => n + (moneyToCents(p.amount) ?? 0), 0);
+  // Troco: pagou a mais e o excesso cabe no dinheiro (cartão/pix não dão troco).
+  const troco = totals.total > 0 && rest < 0 && paidNonCash <= totals.total ? -rest : 0;
+  const exceedsNonCash = totals.total > 0 && paidNonCash > totals.total;
+
   const payloadPays = JSON.stringify(
     totals.total === 0
       ? []
-      : pays
-          .map((p) => ({
-            method: p.method,
-            amountCents: moneyToCents(p.amount) ?? 0,
-            installments: p.method === "credito" ? p.installments : 1,
-          }))
-          .filter((p) => p.amountCents > 0),
+      : (() => {
+          // Linha sem forma escolhida não é pagamento ainda (não vai no envio).
+          // O troco sai do dinheiro: o valor gravado é o aplicado à conta,
+          // não o que o cliente entregou em espécie.
+          const rows = pays
+            .map((p) => ({
+              method: p.method,
+              amountCents: moneyToCents(p.amount) ?? 0,
+              installments: p.method === "credito" ? p.installments : 1,
+            }))
+            .filter((p) => p.amountCents > 0 && p.method);
+          let sobra = troco;
+          for (let i = rows.length - 1; i >= 0 && sobra > 0; i--) {
+            if (rows[i].method !== "dinheiro") continue;
+            const cut = Math.min(sobra, rows[i].amountCents);
+            rows[i].amountCents -= cut;
+            sobra -= cut;
+          }
+          return rows.filter((p) => p.amountCents > 0);
+        })(),
   );
   const payloadTips = JSON.stringify(
     tips
       .map((t) => ({ barberId: t.barberId, amountCents: moneyToCents(t.amount) ?? 0 }))
       .filter((t) => t.barberId && t.amountCents > 0),
   );
-  const paid = totals.total === 0 ? 0 : pays.reduce((n, p) => n + (moneyToCents(p.amount) ?? 0), 0);
-  const rest = totals.total - paid;
+  // Fechar exige forma escolhida em toda linha com valor (nada pré-marcado).
+  const missingMethod = totals.total > 0 && pays.some((p) => !p.method && (moneyToCents(p.amount) ?? 0) > 0);
+
+  useEffect(() => {
+    if (!missingMethod) setPayAlert(false);
+  }, [missingMethod]);
   const linesReady = lines.length > 0 && lines.every((l) => l.name.trim().length > 0);
+  // Serviço sem profissional perde a comissão: tem que escolher quem fez —
+  // vale para serviço comum e para uso de pacote. (A venda do pacote, ao
+  // contrário, nunca tem profissional: a linha é do tipo "pacote".)
+  const coveredMissingBarber = lines.filter((l) => l.kind === "servico" && !l.barberId);
   const barberOptions = [
     ...barbers.map((b) => ({ value: b.id, label: b.name })),
     { value: "none", label: "Sem profissional" },
@@ -211,6 +287,239 @@ export function TicketEditor({
   const tipDraftCents = moneyToCents(tipAmount) ?? 0;
   const serviceOptions = services.map((s) => ({ value: s.id, label: `${s.name} · ${formatBRL(s.priceCents)}` }));
   const productOptions = products.map((p) => ({ value: p.id, label: `${p.name} · ${formatBRL(p.priceCents)}` }));
+
+  // Saldo do pacote já descontando o que esta comanda (rascunho) está usando.
+  const packageOptions = packages.flatMap((cp) =>
+    cp.items.map((i) => {
+      const inThisTicket = lines
+        .filter((l) => isCovered(l) && l.customerPackageId === cp.customerPackageId && l.serviceId === i.serviceId)
+        .reduce((n, l) => n + l.quantity, 0);
+      const remaining = i.remaining - inThisTicket;
+      return {
+        value: `${cp.customerPackageId}:${i.serviceId}`,
+        label: `${i.serviceName} · ${cp.packageName} (restam ${remaining})`,
+        remaining,
+      };
+    }),
+  );
+  // Serviços do pacote que está sendo VENDIDO nesta comanda: dá para usar hoje
+  // mesmo, sem cobrar (o pacote ativa ao cobrar; o uso já baixa do saldo).
+  const saleUseOptions = lines
+    .filter((l) => isSale(l) && l.packageId)
+    .flatMap((saleLine) => {
+      const tpl = salePackages.find((p) => p.packageId === saleLine.packageId);
+      if (!tpl) return [];
+      return tpl.items.map((i) => {
+        const usedHere = lines
+          .filter((x) => isCovered(x) && x.packageId === tpl.packageId && x.serviceId === i.serviceId)
+          .reduce((n, x) => n + x.quantity, 0);
+        return {
+          value: `sale:${tpl.packageId}:${i.serviceId}`,
+          label: `${i.serviceName} · ${tpl.name} (comprando agora · restam ${i.quantity - usedHere})`,
+          remaining: i.quantity - usedHere,
+        };
+      });
+    });
+  function packageRemaining(cpId: string, serviceId: string): number {
+    const opt = packageOptions.find((o) => o.value === `${cpId}:${serviceId}`);
+    return opt?.remaining ?? 0;
+  }
+
+  // Painel visível na comanda: o que o cliente já tem (ou está comprando agora),
+  // quanto resta de cada serviço e o botão para usar sem sair da tela.
+  const packageBlocks = [
+    ...packages.map((cp) => ({
+      key: cp.customerPackageId,
+      title: cp.packageName,
+      badge: "Pacote do cliente",
+      buying: false,
+      items: cp.items.map((i) => ({
+        name: i.serviceName,
+        total: i.quantityTotal,
+        remaining: packageRemaining(cp.customerPackageId, i.serviceId),
+        value: `${cp.customerPackageId}:${i.serviceId}`,
+      })),
+    })),
+    ...salePackages
+      .filter((p) => lines.some((l) => isSale(l) && l.packageId === p.packageId))
+      .map((p) => ({
+        key: `sale-${p.packageId}`,
+        title: p.name,
+        badge: "Comprando agora",
+        buying: true,
+        items: p.items.map((i) => ({
+          name: i.serviceName,
+          total: i.quantity,
+          remaining: saleUseOptions.find((o) => o.value === `sale:${p.packageId}:${i.serviceId}`)?.remaining ?? 0,
+          value: `sale:${p.packageId}:${i.serviceId}`,
+        })),
+      })),
+  ];
+  /** Teto de quantidade de uma linha "pelo pacote" (não passar do saldo). */
+  function maxQtyFor(l: Row): number {
+    if (!isCovered(l)) return 20;
+    if (l.packageId) {
+      const tpl = salePackages.find((p) => p.packageId === l.packageId);
+      const item = tpl?.items.find((i) => i.serviceId === l.serviceId);
+      if (tpl && item) {
+        const usedOthers = lines
+          .filter((x) => x.key !== l.key && isCovered(x) && x.packageId === l.packageId && x.serviceId === l.serviceId)
+          .reduce((n, x) => n + x.quantity, 0);
+        return Math.max(1, item.quantity - usedOthers);
+      }
+    }
+    if (l.customerPackageId && l.serviceId) return l.quantity + packageRemaining(l.customerPackageId, l.serviceId);
+    return 20;
+  }
+
+  /**
+   * Pacote que pode baixar ESTA linha (serviço avulso que já está na comanda):
+   * primeiro os pacotes ativos do cliente; depois o que está comprando agora.
+   */
+  function eligibleSource(l: Row) {
+    if (l.kind !== "servico" || isCovered(l) || !l.serviceId) return null;
+    for (const cp of packages) {
+      const item = cp.items.find((i) => i.serviceId === l.serviceId);
+      if (!item) continue;
+      const remaining = packageRemaining(cp.customerPackageId, l.serviceId);
+      if (remaining > 0) {
+        return {
+          customerPackageId: cp.customerPackageId as string | null,
+          packageId: null as string | null,
+          packageName: cp.packageName,
+          remaining,
+          unitPriceCents: item.unitPriceCents,
+        };
+      }
+    }
+    for (const saleLine of lines) {
+      if (!isSale(saleLine) || !saleLine.packageId) continue;
+      const tpl = salePackages.find((p) => p.packageId === saleLine.packageId);
+      const item = tpl?.items.find((i) => i.serviceId === l.serviceId);
+      if (!tpl || !item) continue;
+      const usedHere = lines
+        .filter((x) => isCovered(x) && x.packageId === tpl.packageId && x.serviceId === l.serviceId)
+        .reduce((n, x) => n + x.quantity, 0);
+      const remaining = item.quantity - usedHere;
+      if (remaining > 0) {
+        return {
+          customerPackageId: saleLine.customerPackageId,
+          packageId: tpl.packageId as string | null,
+          packageName: tpl.name,
+          remaining,
+          unitPriceCents: item.unitPriceCents,
+        };
+      }
+    }
+    return null;
+  }
+
+  /** Baixa a linha pelo pacote (para de cobrar) ou volta a cobrar separado. */
+  function convertLine(i: number, toPackage: boolean) {
+    const l = lines[i];
+    if (!l) return;
+    if (!toPackage) {
+      patch(i, { customerPackageId: null, packageId: null, packageName: null });
+      return;
+    }
+    const src = eligibleSource(l);
+    if (!src) return;
+    patch(i, {
+      customerPackageId: src.customerPackageId,
+      packageId: src.packageId,
+      packageName: src.packageName,
+      unitPriceCents: src.unitPriceCents,
+      quantity: Math.min(l.quantity, src.remaining),
+    });
+  }
+
+  function removeLine(l: Row) {
+    setLines((cur) =>
+      cur.filter((x) => {
+        if (x.key === l.key) return false;
+        // Excluir a venda desfaz também os usos lançados daquele pacote aqui.
+        if (isSale(l) && isCovered(x) && x.packageId === l.packageId) return false;
+        return true;
+      }),
+    );
+  }
+
+  const saleOptions = salePackages.map((p) => ({
+    value: p.packageId,
+    label: `${p.name} · ${formatBRL(p.priceCents)} (${p.totalServices} ${p.totalServices === 1 ? "serviço" : "serviços"}${p.discountPct > 0 ? `, −${String(p.discountPct).replace(".", ",")}%` : ""})`,
+  }));
+
+  function addPackageSale(packageId: string) {
+    const pkg = salePackages.find((p) => p.packageId === packageId);
+    if (!pkg) return;
+    setLines((cur) => [
+      ...cur,
+      {
+        key: newKey(),
+        kind: "pacote",
+        serviceId: null,
+        name: pkg.name,
+        quantity: 1,
+        unitPriceCents: pkg.priceCents,
+        // Venda de pacote não é serviço executado: sem profissional, sem comissão.
+        // A comissão nasce depois, quando o cliente usar cada serviço do pacote.
+        barberId: null,
+        customerPackageId: null,
+        packageId: pkg.packageId,
+        packageName: pkg.name,
+      },
+    ]);
+  }
+
+  function addPackageUse(value: string) {
+    const barberId = lines.at(-1)?.barberId ?? ticket.barberId;
+    if (value.startsWith("sale:")) {
+      const [, packageId, serviceId] = value.split(":");
+      const tpl = salePackages.find((p) => p.packageId === packageId);
+      const item = tpl?.items.find((i) => i.serviceId === serviceId);
+      const saleLine = lines.find((l) => isSale(l) && l.packageId === packageId);
+      if (!tpl || !item || !saleLine) return;
+      const usedHere = lines
+        .filter((x) => isCovered(x) && x.packageId === packageId && x.serviceId === serviceId)
+        .reduce((n, x) => n + x.quantity, 0);
+      if (usedHere >= item.quantity) return;
+      setLines((cur) => [
+        ...cur,
+        {
+          key: newKey(),
+          kind: "servico",
+          serviceId: item.serviceId,
+          name: item.serviceName,
+          quantity: 1,
+          unitPriceCents: item.unitPriceCents,
+          barberId,
+          customerPackageId: saleLine.customerPackageId,
+          packageId: tpl.packageId,
+          packageName: tpl.name,
+        },
+      ]);
+      return;
+    }
+    const [cpId, serviceId] = value.split(":");
+    const cp = packages.find((p) => p.customerPackageId === cpId);
+    const item = cp?.items.find((i) => i.serviceId === serviceId);
+    if (!cp || !item || packageRemaining(cpId!, serviceId!) <= 0) return;
+    setLines((cur) => [
+      ...cur,
+      {
+        key: newKey(),
+        kind: "servico",
+        serviceId: item.serviceId,
+        name: item.serviceName,
+        quantity: 1,
+        unitPriceCents: item.unitPriceCents,
+        barberId,
+        customerPackageId: cp.customerPackageId,
+        packageId: null,
+        packageName: cp.packageName,
+      },
+    ]);
+  }
 
   function patch(i: number, next: Partial<Row>) {
     setLines((cur) => cur.map((x, j) => (j === i ? { ...x, ...next } : x)));
@@ -222,7 +531,18 @@ export function TicketEditor({
     const barberId = lines.at(-1)?.barberId ?? ticket.barberId;
     setLines((cur) => [
       ...cur,
-      { key: newKey(), kind: "servico", serviceId: svc.id, name: svc.name, quantity: 1, unitPriceCents: svc.priceCents, barberId },
+      {
+        key: newKey(),
+        kind: "servico",
+        serviceId: svc.id,
+        name: svc.name,
+        quantity: 1,
+        unitPriceCents: svc.priceCents,
+        barberId,
+        customerPackageId: null,
+        packageId: null,
+        packageName: null,
+      },
     ]);
   }
 
@@ -262,6 +582,9 @@ export function TicketEditor({
         quantity: 1,
         unitPriceCents: product.priceCents,
         barberId,
+        customerPackageId: null,
+        packageId: null,
+        packageName: null,
       },
     ]);
   }
@@ -304,16 +627,31 @@ export function TicketEditor({
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium text-cream">{l.name}</span>
                     <span className="mt-0.5 block text-xs text-muted-foreground">
-                      {l.kind === "produto" ? "Produto" : "Serviço"}
+                      {isSale(l)
+                        ? "Venda de pacote"
+                        : isCovered(l)
+                          ? `Pelo pacote${l.packageName ? ` ${l.packageName}` : ""} · já pago`
+                          : l.kind === "produto"
+                            ? "Produto"
+                            : "Serviço"}
                       {barbers.find((b) => b.id === l.barberId)?.name
                         ? ` · ${barbers.find((b) => b.id === l.barberId)?.name}`
                         : ""}
                       {l.quantity > 1 ? ` · ${l.quantity} × ${formatBRL(l.unitPriceCents)}` : ""}
                     </span>
                   </span>
-                  <span className="shrink-0 text-sm font-medium tabular-nums text-gold">
-                    {formatBRL(l.quantity * l.unitPriceCents)}
-                  </span>
+                  {isCovered(l) ? (
+                    <span className="flex shrink-0 items-baseline gap-1.5">
+                      <span className="text-xs tabular-nums text-muted-foreground line-through">
+                        {formatBRL(l.quantity * l.unitPriceCents)}
+                      </span>
+                      <span className="text-sm font-medium tabular-nums text-gold">{formatBRL(0)}</span>
+                    </span>
+                  ) : (
+                    <span className="shrink-0 text-sm font-medium tabular-nums text-gold">
+                      {formatBRL(l.quantity * l.unitPriceCents)}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -350,6 +688,12 @@ export function TicketEditor({
               <span>Subtotal</span>
               <span className="tabular-nums text-cream">{formatBRL(totals.subtotal)}</span>
             </span>
+            {totals.coveredCents > 0 ? (
+              <span className="flex justify-between gap-3 py-1 text-muted-foreground">
+                <span>Pelo pacote (já pago)</span>
+                <span className="tabular-nums text-gold/90">{formatBRL(totals.coveredCents)}</span>
+              </span>
+            ) : null}
             {totals.discount ? (
               <span className="flex justify-between gap-3 py-1 text-muted-foreground">
                 <span>Desconto</span>
@@ -441,7 +785,7 @@ export function TicketEditor({
       action={chargeAction}
       className={
         page
-          ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]"
+          ? "grid items-start gap-6 lg:min-h-0 lg:flex-1 lg:items-stretch lg:grid-cols-[minmax(0,1fr)_24rem]"
           : "grid min-h-0 flex-1 overflow-hidden md:grid-cols-[minmax(0,1.2fr)_minmax(22rem,26rem)]"
       }
     >
@@ -455,18 +799,17 @@ export function TicketEditor({
       <div
         className={
           page
-            ? "flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-[#262626]/85 to-[#161616]/90 shadow-[inset_0_1px_0_rgb(242_237_228/0.06)]"
-            : "flex min-w-0 flex-col gap-3 px-5 py-4 sm:px-6"
+            ? "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-[#262626]/85 to-[#161616]/90 shadow-[inset_0_1px_0_rgb(242_237_228/0.06)]"
+            : "flex min-h-0 min-w-0 flex-col gap-2 px-4 py-3 sm:px-5"
         }
       >
         {page ? (
-          <header className="flex items-center gap-3 border-b border-border/80 bg-black/20 px-4 py-3 sm:px-5">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-gold/30 bg-gold/10 text-gold">
-              <Receipt className="size-4" aria-hidden="true" />
+          <header className="flex items-center gap-2.5 border-b border-border/80 bg-black/20 px-4 py-2.5 sm:px-5">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-gold/30 bg-gold/10 text-gold">
+              <Receipt className="size-3.5" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
-              <h3 className="font-heading text-base font-semibold uppercase tracking-wide text-cream">Itens da comanda</h3>
-              <p className="text-[0.7rem] text-muted-foreground">Profissional, preço e quantidade de cada serviço ou produto.</p>
+              <h3 className="font-heading text-sm font-semibold uppercase tracking-wide text-cream">Itens da comanda</h3>
             </div>
             <span className="label-caps shrink-0 text-[0.62rem]">
               {lines.length} {lines.length === 1 ? "item" : "itens"}
@@ -474,12 +817,125 @@ export function TicketEditor({
           </header>
         ) : null}
 
-        <div className={page ? "flex flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5" : "contents"}>
+        <div className={page ? "flex min-h-0 flex-1 flex-col gap-2.5 px-4 py-3 sm:px-5" : "contents"}>
         {state.status !== "idle" && state.message ? (
           <FormAlert tone={state.status === "error" ? "error" : "success"}>{state.message}</FormAlert>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-2">
+        {packageBlocks.length ? (
+          <section
+            aria-label="Pacotes do cliente"
+            className="shrink-0 overflow-hidden rounded-lg border border-gold/25 bg-gold/[0.05]"
+          >
+            {/* Sem rolagem aqui: todos os pacotes ficam sempre visíveis.
+                A única rolagem da comanda é a lista de itens. */}
+            <div className="divide-y divide-white/5">
+              {packageBlocks.map((block) => {
+                const totalRemaining = block.items.reduce((n, i) => n + Math.max(0, i.remaining), 0);
+                const onlyItem = block.items.length === 1 ? block.items[0] : null;
+                return (
+                  <div key={block.key} className={cn("px-2.5 py-1.5", block.buying && "bg-amber-300/[0.04]")}>
+                    <div className="flex items-start gap-2">
+                      <span
+                        className={cn(
+                          "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border",
+                          block.buying
+                            ? "border-amber-300/25 bg-amber-300/10 text-amber-300"
+                            : "border-emerald-300/25 bg-emerald-300/10 text-emerald-300",
+                        )}
+                      >
+                        {block.buying ? (
+                          <Clock3 className="size-3.5" aria-hidden="true" />
+                        ) : (
+                          <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-[0.78rem] font-semibold text-cream">{block.title}</span>
+                          <span
+                            className={cn(
+                              "shrink-0 rounded-full border px-1 py-px text-[0.55rem] font-semibold tracking-wide uppercase",
+                              block.buying
+                                ? "border-amber-300/25 bg-amber-300/10 text-amber-200"
+                                : "border-emerald-300/25 bg-emerald-300/10 text-emerald-200",
+                            )}
+                          >
+                            {block.buying ? "Novo nesta comanda" : "Ativo"}
+                          </span>
+                          {onlyItem ? (
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="outline"
+                              disabled={onlyItem.remaining <= 0}
+                              onClick={() => addPackageUse(onlyItem.value)}
+                              className={cn(
+                                "ml-auto h-6 shrink-0 px-2",
+                                block.buying
+                                  ? "border-amber-300/40 text-amber-200 hover:bg-amber-300/10 hover:text-amber-100"
+                                  : "border-gold/40 text-gold hover:bg-gold/10 hover:text-gold",
+                              )}
+                            >
+                              <Plus />
+                              Usar
+                            </Button>
+                          ) : null}
+                        </div>
+                        <p className="mt-0.5 text-[0.7rem] leading-4 text-muted-foreground">
+                          {onlyItem
+                            ? `${onlyItem.name} · restam ${Math.max(0, onlyItem.remaining)} de ${onlyItem.total}${block.buying ? " · ativa ao cobrar" : ""}`
+                            : `${totalRemaining} ${totalRemaining === 1 ? "restante" : "restantes"}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {!onlyItem ? (
+                      <div className="mt-1.5 flex flex-wrap gap-1 pl-8">
+                        {block.items.map((item) => (
+                          <span
+                            key={item.value}
+                            className="flex min-h-6 items-center gap-1.5 rounded-md bg-black/25 py-0.5 pr-0.5 pl-2"
+                          >
+                            <span className="text-[0.68rem] leading-tight text-cream">
+                              {item.name}
+                              <span className="tabular-nums text-muted-foreground">
+                                {" "}· restam {Math.max(0, item.remaining)} de {item.total}
+                              </span>
+                            </span>
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="outline"
+                              disabled={item.remaining <= 0}
+                              onClick={() => addPackageUse(item.value)}
+                              className={cn(
+                                "h-5 shrink-0 px-1.5",
+                                block.buying
+                                  ? "border-amber-300/40 text-amber-200 hover:bg-amber-300/10 hover:text-amber-100"
+                                  : "border-gold/40 text-gold hover:bg-gold/10 hover:text-gold",
+                              )}
+                            >
+                              <Plus />
+                              Usar
+                            </Button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        <div
+          className={cn(
+            "grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-border/80 bg-black/25 p-1",
+            salePackages.length && ticket.customerId && "min-[560px]:grid-cols-3",
+          )}
+        >
           <Select
             key={`servico-${servicePick}`}
             value=""
@@ -493,6 +949,7 @@ export function TicketEditor({
             button
             searchPlaceholder="Buscar serviço"
             disabled={!services.length}
+            className="h-8 border-transparent bg-transparent px-2 text-[0.62rem] tracking-[0.12em] shadow-none hover:border-gold/30 hover:bg-gold/10 data-[state=open]:border-gold/40 data-[state=open]:bg-gold/10"
           />
           <Select
             key={`produto-${productPick}`}
@@ -507,94 +964,177 @@ export function TicketEditor({
             button
             searchPlaceholder="Buscar produto"
             disabled={!products.length}
+            className="h-8 border-transparent bg-transparent px-2 text-[0.62rem] tracking-[0.12em] shadow-none hover:border-gold/30 hover:bg-gold/10 data-[state=open]:border-gold/40 data-[state=open]:bg-gold/10"
           />
+          {salePackages.length && ticket.customerId ? (
+            <Select
+              key={`venda-pacote-${salePick}`}
+              value=""
+              onValueChange={(id) => {
+                addPackageSale(id);
+                setSalePick((n) => n + 1);
+              }}
+              options={saleOptions}
+              placeholder="Vender pacote"
+              searchable
+              button
+              searchPlaceholder="Buscar pacote"
+              className="col-span-2 h-8 border-transparent bg-transparent px-2 text-[0.62rem] tracking-[0.12em] shadow-none hover:border-gold/30 hover:bg-gold/10 min-[560px]:col-span-1 data-[state=open]:border-gold/40 data-[state=open]:bg-gold/10"
+            />
+          ) : null}
         </div>
 
-        {page ? null : (
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="font-heading text-sm font-semibold uppercase tracking-[0.16em] text-cream">Itens</h3>
-            <p className="text-xs text-muted-foreground">Profissional, preço e quantidade de cada um</p>
-          </div>
-        )}
+        {salePackages.length && !ticket.customerId ? (
+          <p className="flex min-h-8 items-center rounded-lg border border-dashed border-border px-2.5 py-1 text-[0.68rem] leading-snug text-muted-foreground">
+            Para vender um pacote, vincule um cliente cadastrado a esta comanda.
+          </p>
+        ) : null}
+
+        {coveredMissingBarber.length ? (
+          <p role="alert" className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+            Escolha o profissional de {coveredMissingBarber.map((l) => l.name).join(", ")}: serviço sem profissional
+            perde a comissão de quem fez.
+          </p>
+        ) : null}
 
         {lines.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+          <p className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
             Nada lançado. Adicione um serviço ou um produto.
           </p>
         ) : (
-          <ul className={page ? "flex flex-col gap-2" : "scroll-luxe flex max-h-[min(22rem,46dvh)] flex-col gap-2 overflow-y-auto pr-2"}>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 bg-[#101010]">
+            {!page ? (
+              <div className="flex h-8 shrink-0 items-center justify-between border-b border-border/70 bg-white/[0.02] px-3">
+                <span className="label-caps text-[0.6rem]">Itens lançados</span>
+                <span className="text-[0.68rem] tabular-nums text-muted-foreground">
+                  {lines.length} {lines.length === 1 ? "item" : "itens"} · {formatBRL(subtotalCents)}
+                </span>
+              </div>
+            ) : null}
+            <ul className="scroll-luxe flex min-h-0 flex-1 flex-col divide-y divide-border/70 overflow-y-auto">
             {lines.map((l, i) => (
-              <li key={l.key} className="rounded-xl border border-border/80 bg-[#121212] px-3 py-2.5">
-                <div className="flex items-center gap-2">
-                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-cream">{l.name}</p>
-                  <span className="shrink-0 text-[0.62rem] font-medium uppercase tracking-[0.14em] text-gold/80">
-                    {l.kind === "produto" ? "Produto" : "Serviço"}
-                  </span>
-                  <span className="w-20 shrink-0 text-right text-sm font-medium tabular-nums text-gold">
-                    {formatBRL(l.quantity * l.unitPriceCents)}
-                  </span>
+              <li key={l.key} className="px-3 py-2.5 transition-colors hover:bg-white/[0.015]">
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[0.86rem] leading-5 font-semibold text-cream">{l.name}</p>
+                    <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.65rem] leading-none text-muted-foreground">
+                      <span className="font-medium tracking-[0.06em] text-gold/75 uppercase">
+                        {isSale(l)
+                          ? "Venda de pacote"
+                          : isCovered(l)
+                            ? `Pacote${l.packageName ? ` · ${l.packageName}` : ""}`
+                            : l.kind === "produto"
+                              ? "Produto"
+                              : "Serviço"}
+                      </span>
+                      {isSale(l) ? <span>Ativa ao cobrar · sem comissão sobre a venda</span> : null}
+                      {isCovered(l) ? (
+                        <>
+                          <span className="text-gold/90">sem cobrança</span>
+                          <button
+                            type="button"
+                            onClick={() => convertLine(i, false)}
+                            className="cursor-pointer font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-gold hover:underline"
+                          >
+                            Cobrar separado
+                          </button>
+                        </>
+                      ) : eligibleSource(l) ? (
+                        <button
+                          type="button"
+                          onClick={() => convertLine(i, true)}
+                          className="flex h-5 cursor-pointer items-center gap-1 rounded-full border border-gold/40 px-1.5 font-medium text-gold transition-colors hover:border-gold hover:bg-gold/10"
+                        >
+                          <Layers className="size-3" aria-hidden="true" />
+                          Usar do pacote · restam {eligibleSource(l)!.remaining}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {isCovered(l) ? (
+                    <span className="flex shrink-0 items-baseline gap-1.5 pt-0.5 text-right">
+                      <span className="text-[0.7rem] tabular-nums text-muted-foreground line-through">
+                        {formatBRL(l.quantity * l.unitPriceCents)}
+                      </span>
+                      <span className="font-heading text-[0.95rem] font-medium tabular-nums text-gold">{formatBRL(0)}</span>
+                    </span>
+                  ) : (
+                    <span className="w-[4.5rem] shrink-0 pt-0.5 text-right font-heading text-[0.95rem] font-medium tabular-nums text-gold">
+                      {formatBRL(l.quantity * l.unitPriceCents)}
+                    </span>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setLines((cur) => cur.filter((x) => x.key !== l.key))}
-                    className="rounded-md p-1 text-muted-foreground hover:text-rose-300"
+                    onClick={() => removeLine(l)}
+                    className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-rose-400/10 hover:text-rose-300"
                     aria-label={`Excluir ${l.name || "item"}`}
                   >
-                    <Trash2 className="size-4" />
+                    <Trash2 className="size-3.5" />
                   </button>
                 </div>
 
-                <div className="mt-2.5 grid grid-cols-[minmax(0,1fr)_7.25rem_auto] items-center gap-2">
-                  <Select
-                    value={l.barberId ?? "none"}
-                    onValueChange={(v) => patch(i, { barberId: v === "none" ? null : v })}
-                    options={barberOptions}
-                    placeholder="Profissional"
-                    searchable
-                    searchPlaceholder="Buscar profissional"
-                  />
-                  <input
-                    value={l.unitPriceCents ? centsToInput(l.unitPriceCents) : ""}
-                    onChange={(e) => patch(i, { unitPriceCents: moneyToCents(maskMoney(e.target.value)) ?? 0 })}
-                    inputMode="decimal"
-                    placeholder="0,00"
-                    aria-label={`Preço de ${l.name || "item"}`}
-                    className={cn(field, "text-right tabular-nums")}
-                  />
-                  <span className="flex h-11 items-center gap-0.5 rounded-lg border border-input bg-[rgb(8_8_8/0.5)] px-1">
-                    <button
-                      type="button"
-                      className="flex size-8 cursor-pointer items-center justify-center rounded-md text-cream hover:bg-gold/10 hover:text-gold"
-                      onClick={() => patch(i, { quantity: Math.max(1, l.quantity - 1) })}
-                      aria-label="Diminuir quantidade"
-                    >
-                      <Minus className="size-3.5" />
-                    </button>
-                    <span className="w-6 text-center text-sm tabular-nums text-cream">{l.quantity}</span>
-                    <button
-                      type="button"
-                      className="flex size-8 cursor-pointer items-center justify-center rounded-md text-cream hover:bg-gold/10 hover:text-gold"
-                      onClick={() => patch(i, { quantity: Math.min(20, l.quantity + 1) })}
-                      aria-label="Aumentar quantidade"
-                    >
-                      <Plus className="size-3.5" />
-                    </button>
-                  </span>
-                </div>
+                {isSale(l) ? null : (
+                  <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-white/5 bg-black/25 p-1">
+                    <Select
+                      value={l.barberId ?? "none"}
+                      onValueChange={(v) => patch(i, { barberId: v === "none" ? null : v })}
+                      options={barberOptions}
+                      placeholder="Profissional"
+                      searchable
+                      searchPlaceholder="Buscar profissional"
+                      className={cn(
+                        "h-8 min-w-0 flex-1 border-transparent bg-transparent px-2 text-xs shadow-none hover:border-gold/25",
+                        l.kind === "servico" && !l.barberId && "border-amber-300/60 bg-amber-300/10 hover:border-amber-300/80",
+                      )}
+                    />
+                    <input
+                      value={l.unitPriceCents ? centsToInput(l.unitPriceCents) : ""}
+                      onChange={(e) => patch(i, { unitPriceCents: moneyToCents(maskMoney(e.target.value)) ?? 0 })}
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      disabled={isCovered(l)}
+                      title={isCovered(l) ? "Valor do pacote (já pago, só para comissão)" : undefined}
+                      aria-label={`Preço de ${l.name || "item"}`}
+                      className={cn(field, "h-8 w-[6.25rem] shrink-0 border-transparent bg-black/20 px-2 text-right text-sm tabular-nums", isCovered(l) && "opacity-60")}
+                    />
+                    <span className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg border border-transparent bg-black/20 px-0.5">
+                      <button
+                        type="button"
+                        className="flex size-6 cursor-pointer items-center justify-center rounded-md text-cream hover:bg-gold/10 hover:text-gold"
+                        onClick={() => patch(i, { quantity: Math.max(1, l.quantity - 1) })}
+                        aria-label="Diminuir quantidade"
+                      >
+                        <Minus className="size-3.5" />
+                      </button>
+                      <span className="w-6 text-center text-xs tabular-nums text-cream">{l.quantity}</span>
+                      <button
+                        type="button"
+                        className="flex size-6 cursor-pointer items-center justify-center rounded-md text-cream hover:bg-gold/10 hover:text-gold"
+                        onClick={() => patch(i, { quantity: Math.min(maxQtyFor(l), l.quantity + 1) })}
+                        aria-label="Aumentar quantidade"
+                      >
+                        <Plus className="size-3.5" />
+                      </button>
+                    </span>
+                  </div>
+                )}
               </li>
             ))}
-          </ul>
+            </ul>
+          </div>
         )}
 
-        <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-          Observação
+        <label className={cn("flex shrink-0 items-center gap-2 text-xs text-muted-foreground", !page && "mt-auto")}>
+          <span className="label-caps shrink-0 text-[0.6rem]">Observação</span>
           <textarea
             name="notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             maxLength={500}
-            rows={2}
+            rows={1}
             placeholder="Opcional"
-            className="field-luxe resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-cream"
+            className="field-luxe h-9 min-w-0 flex-1 resize-none overflow-hidden rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-cream [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
         </label>
         </div>
@@ -603,11 +1143,11 @@ export function TicketEditor({
       <aside
         className={
           page
-            ? "flex flex-col overflow-hidden rounded-2xl border border-gold/30 bg-gradient-to-b from-[#262626]/85 to-[#161616]/90 shadow-[inset_0_1px_0_rgb(242_237_228/0.06)] lg:sticky lg:top-6"
+            ? "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gold/30 bg-gradient-to-b from-[#262626]/85 to-[#161616]/90 shadow-[inset_0_1px_0_rgb(242_237_228/0.06)]"
             : "flex min-h-0 flex-col overflow-hidden border-t border-gold/25 bg-[#12110e] md:border-t-0 md:border-l"
         }
       >
-        <div className={page ? "flex flex-col gap-4 px-5 py-5" : "scroll-luxe flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-5"}>
+        <div className={page ? "scroll-luxe flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-5" : "scroll-luxe flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4"}>
         {page ? (
           <header className="-mx-5 -mt-5 flex items-center gap-3 border-b border-gold/20 bg-black/20 px-5 py-3">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-gold/30 bg-gold/10 text-gold">
@@ -625,11 +1165,20 @@ export function TicketEditor({
           </header>
         )}
 
-        <section className="rounded-2xl border border-border bg-gradient-to-b from-[#262626]/80 to-[#141414] px-4 py-3 shadow-[inset_0_1px_0_rgb(242_237_228/0.05)]">
-          <div className="flex items-center justify-between gap-3 py-1.5">
+        <section className="rounded-xl border border-border bg-gradient-to-b from-[#262626]/80 to-[#141414] px-3 py-2 shadow-[inset_0_1px_0_rgb(242_237_228/0.05)]">
+          <div className="flex items-center justify-between gap-3 py-1">
             <span className="label-caps text-[0.62rem]">Subtotal</span>
             <span className="text-sm tabular-nums text-cream">{formatBRL(totals.subtotal)}</span>
           </div>
+          {coveredCents > 0 ? (
+            <div className="flex items-center justify-between gap-3 py-1.5">
+              <span className="label-caps flex items-center gap-1.5 text-[0.62rem]">
+                <Layers className="size-3.5 text-gold/80" aria-hidden="true" />
+                Pelo pacote (já pago)
+              </span>
+              <span className="text-sm tabular-nums text-gold/90">{formatBRL(coveredCents)}</span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between gap-3 py-1.5">
             <span className="label-caps text-[0.62rem]">Desconto</span>
             <div className="flex items-center gap-1.5">
@@ -670,6 +1219,9 @@ export function TicketEditor({
                 <input
                   value={discount}
                   onChange={(e) => setDiscount(maskMoney(e.target.value))}
+                  onBlur={() => {
+                    if (discountOverLimit) setDiscount(centsToInput(Math.max(0, subtotalCents)));
+                  }}
                   inputMode="decimal"
                   placeholder="0,00"
                   aria-label="Desconto em reais"
@@ -680,6 +1232,11 @@ export function TicketEditor({
           </div>
           {discountMode === "percent" && discountCents > 0 ? (
             <p className="-mt-1 pb-1 text-right text-[0.65rem] tabular-nums text-muted-foreground">− {formatBRL(discountCents)}</p>
+          ) : null}
+          {discountOverLimit ? (
+            <p className="-mt-1 pb-1 text-right text-[0.65rem] tabular-nums text-amber-200">
+              Desconto limitado ao subtotal (− {formatBRL(Math.max(0, subtotalCents))})
+            </p>
           ) : null}
 
           <div className="border-t border-border/80 py-2">
@@ -762,9 +1319,9 @@ export function TicketEditor({
             ) : null}
           </div>
 
-          <div className="mt-1 flex items-end justify-between border-t border-gold/25 pt-3">
+          <div className="mt-1 flex items-end justify-between border-t border-gold/25 pt-2">
             <span className="label-caps text-[0.65rem] text-gold">Total</span>
-            <span className="font-heading text-[2rem] leading-none text-gold tabular-nums">{formatBRL(totals.total)}</span>
+            <span className="font-heading text-[1.65rem] leading-none text-gold tabular-nums">{formatBRL(totals.total)}</span>
           </div>
         </section>
 
@@ -793,6 +1350,7 @@ export function TicketEditor({
                     <button
                       key={m.value}
                       type="button"
+                      aria-pressed={p.method === m.value}
                       onClick={() =>
                         setPays((cur) =>
                           cur.map((x, j) =>
@@ -801,7 +1359,7 @@ export function TicketEditor({
                         )
                       }
                       className={cn(
-                        "h-10 cursor-pointer border-r border-border text-xs last:border-r-0",
+                        "h-9 cursor-pointer border-r border-border text-xs last:border-r-0",
                         p.method === m.value ? "bg-gold text-[#1a1408]" : "bg-black/20 text-muted-foreground hover:text-cream",
                       )}
                     >
@@ -820,7 +1378,7 @@ export function TicketEditor({
                     }}
                     inputMode="decimal"
                     aria-label={`Valor do pagamento ${i + 1}`}
-                    className={cn(field, "h-10 w-36 text-right text-base tabular-nums")}
+                    className={cn(field, "h-9 w-36 text-right text-base tabular-nums")}
                   />
                 </label>
                 {p.method === "credito" ? (
@@ -853,27 +1411,63 @@ export function TicketEditor({
                 onClick={() => {
                   setPayLocked(true);
                   const missing = Math.max(0, rest);
-                  setPays((cur) => [...cur, { method: "pix", amount: missing ? centsToInput(missing) : "", installments: 1 }]);
+                  setPays((cur) => [...cur, { method: "", amount: missing ? centsToInput(missing) : "", installments: 1 }]);
                 }}
-                className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-gold/40 text-xs text-gold hover:border-gold hover:bg-gold/10"
+                className="inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-gold/40 text-xs text-gold hover:border-gold hover:bg-gold/10"
               >
                 <Plus className="size-3.5" />
                 Dividir em outra forma
               </button>
             ) : null}
-            {rest !== 0 ? (
+            {rest > 0 ? (
+              <p className="text-xs text-amber-200">Falta {formatBRL(rest)} para fechar.</p>
+            ) : exceedsNonCash ? (
               <p className="text-xs text-amber-200">
-                {rest > 0 ? `Falta ${formatBRL(rest)} para fechar.` : `Excede o total em ${formatBRL(-rest)}.`}
+                Excede o total em {formatBRL(paidNonCash - totals.total)} — troco só é possível em dinheiro.
+              </p>
+            ) : troco > 0 ? (
+              <p className="text-xs font-medium text-emerald-300">Troco de {formatBRL(troco)} em dinheiro.</p>
+            ) : null}
+            {payAlert && missingMethod ? (
+              <p role="alert" className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+                Escolha a forma de pagamento (Dinheiro, Pix, Débito ou Crédito) para fechar a comanda.
               </p>
             ) : null}
           </section>
         ) : dayMismatch ? (
-          <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-relaxed text-amber-100">
-            O caixa aberto é de <strong className="font-medium">{dayLabel(registerDay!)}</strong> e esta comanda é
-            de <strong className="font-medium">{dayLabel(ticketDay)}</strong>. Ela só pode ser recebida no caixa do
-            dia dela: feche o caixa atual e abra ou reabra o caixa de {dayLabel(ticketDay)}. Salvar as alterações
-            continua liberado.
-          </p>
+          <div
+            role="alert"
+            className="flex flex-col gap-2.5 rounded-xl border border-amber-300/50 bg-amber-300/10 px-4 py-4"
+          >
+            <p className="flex items-center gap-2 font-heading text-base font-semibold uppercase tracking-wide text-amber-200">
+              <TriangleAlert className="size-5 shrink-0" aria-hidden="true" />
+              {registerDay! < ticketDay
+                ? `O caixa de ${dayLabel(registerDay!)} ainda está aberto`
+                : `Esta comanda é de ${dayLabel(ticketDay)}`}
+            </p>
+            <p className="text-sm leading-relaxed text-amber-100/90">
+              {registerDay! < ticketDay ? (
+                <>
+                  Esta comanda é de <strong className="font-medium text-amber-50">{dayLabel(ticketDay)}</strong> e só
+                  pode ser recebida no caixa desse dia. Feche o caixa de {dayLabel(registerDay!)} e abra o caixa de{" "}
+                  {dayLabel(ticketDay)} para receber. Salvar as alterações continua liberado.
+                </>
+              ) : (
+                <>
+                  O caixa aberto é de <strong className="font-medium text-amber-50">{dayLabel(registerDay!)}</strong>,
+                  mas esta comanda é de {dayLabel(ticketDay)}. Feche o caixa atual e reabra o caixa de{" "}
+                  {dayLabel(ticketDay)} pelo histórico para receber. Salvar as alterações continua liberado.
+                </>
+              )}
+            </p>
+            <Link
+              href={`/u/${slug}/caixa`}
+              className={buttonVariants({ variant: "luxe", size: "sm", className: "self-start" })}
+            >
+              Ir para o Caixa
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
+          </div>
         ) : (
           <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-100">
             Abra o caixa do dia para receber. A comanda pode ser salva antes.
@@ -884,17 +1478,49 @@ export function TicketEditor({
         <div
           className={
             page
-              ? "flex flex-col gap-2 border-t border-gold/20 bg-black/20 px-5 py-4"
-              : "flex shrink-0 flex-col gap-2 border-t border-gold/20 bg-[#12110e] px-5 py-4"
+              ? "flex flex-col gap-2 border-t border-gold/20 bg-black/20 px-5 py-3"
+              : "flex shrink-0 flex-col gap-2 border-t border-gold/20 bg-[#12110e] px-4 py-3"
           }
         >
-          <Button type="submit" variant="luxe" size="lg" className="w-full" disabled={pending || !registerOpen || dayMismatch || !linesReady || rest !== 0}>
-            Receber {formatBRL(totals.total)}
-            <ArrowRight className="transition-transform duration-300 group-hover/button:translate-x-1" />
-          </Button>
-          <Button type="submit" formAction={saveAction} variant="outline" size="lg" className="w-full" disabled={pending || !linesReady}>
-            Salvar comanda
-          </Button>
+          {confirmFree ? (
+            <div className="flex flex-col gap-2" role="alertdialog" aria-label="Confirmar comanda de graça">
+              <p className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+                Esta comanda vai sair de graça: o desconto de {formatBRL(totals.discount)} cobre todo o subtotal.
+              </p>
+              <Button type="submit" variant="luxe" className="w-full" disabled={pending || coveredMissingBarber.length > 0}>
+                Confirmar e receber
+              </Button>
+              <Button type="button" variant="outline" className="h-9 w-full" disabled={pending} onClick={() => setConfirmFree(false)}>
+                Voltar
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Button
+                type="submit"
+                variant="luxe"
+                className="w-full"
+                disabled={pending || !registerOpen || dayMismatch || !linesReady || rest > 0 || exceedsNonCash || coveredMissingBarber.length > 0}
+                onClick={(e) => {
+                  if (missingMethod) {
+                    e.preventDefault();
+                    setPayAlert(true);
+                    return;
+                  }
+                  if (freeByDiscount) {
+                    e.preventDefault();
+                    setConfirmFree(true);
+                  }
+                }}
+              >
+                Receber {formatBRL(totals.total)}
+                <ArrowRight className="transition-transform duration-300 group-hover/button:translate-x-1" />
+              </Button>
+              <Button type="submit" formAction={saveAction} variant="outline" className="h-9 w-full" disabled={pending || !linesReady || coveredMissingBarber.length > 0}>
+                Salvar comanda
+              </Button>
+            </>
+          )}
         </div>
       </aside>
     </form>

@@ -495,7 +495,8 @@ export function UnitSettingsForm({
                 <span>
                   {misaligned === 1 ? "1 serviço ativo tem duração que não é" : `${misaligned} serviços ativos têm duração que não é`}{" "}
                   múltipla de {slotLabel(Number(slot)).replace("minutos", "min")}. A agenda reserva o tempo arredondado para
-                  cima (por exemplo, 45 min ocupam 3 linhas de 20 min).
+                  cima (por exemplo, 45 min ocupam {Math.ceil(45 / Number(slot))}{" "}
+                  {Math.ceil(45 / Number(slot)) === 1 ? "linha" : "linhas"} de {Number(slot)} min).
                 </span>
               ) : (
                 <span>Todos os serviços ativos fecham certinho com essa linha da agenda.</span>

@@ -261,7 +261,7 @@ export const barberDetailsSchema = z.object({
   instagram: instagramField,
   facebook: facebookField,
   tiktok: tiktokField,
-  commissionServices: percentField,
+  // Serviços: sem % no cadastro — a comissão é a tabela progressiva da rede.
   commissionProducts: percentField,
 });
 

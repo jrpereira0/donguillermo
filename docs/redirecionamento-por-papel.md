@@ -34,9 +34,9 @@ flowchart TD
 | `/admin` | ✅ | ❌ | ❌ | ❌ | ❌ |
 | `/u/<slug>/agenda` | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `/u/<slug>/minha-agenda` | ✅ | ❌ | ✅ | ❌ | ❌ |
-| `/u/<slug>/clientes`, `profissionais`, `servicos`, `produtos`, `caixa`, `configuracoes` | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `/u/<slug>/clientes`, `profissionais`, `servicos`, `produtos`, `pacotes`, `caixa`, `comissoes`, `configuracoes` | ✅ | ✅ | ❌ | ❌ | ❌ |
 
-Cada área tem um papel exigido em `AREA_ROLE` (`src/lib/auth/roles.ts`): `agenda`, `clientes`, `profissionais`, `servicos`, `produtos`, `caixa` e `configuracoes` são da recepção; `minha-agenda` é do barbeiro. O admin da rede entra em todas. O menu lateral (`src/components/unit/nav.ts`) só mostra o que o papel pode abrir.
+Cada área tem um papel exigido em `AREA_ROLE` (`src/lib/auth/roles.ts`): `agenda`, `clientes`, `profissionais`, `servicos`, `produtos`, `pacotes`, `caixa`, `comissoes` e `configuracoes` são da recepção; `minha-agenda` é do barbeiro. O admin da rede entra em todas. O menu lateral (`src/components/unit/nav.ts`) só mostra o que o papel pode abrir.
 
 Todo acesso indevido vai para **`/sem-acesso?motivo=area`**, inclusive quando a unidade nem existe. Assim não se revela quais unidades existem.
 

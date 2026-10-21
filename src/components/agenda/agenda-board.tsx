@@ -146,6 +146,8 @@ export function AgendaBoard({
   const [moving, startMoving] = useTransition();
   const [statusPending, startStatus] = useTransition();
   const [statusMenu, setStatusMenu] = useState<StatusMenu | null>(null);
+  /** Cancelar pede confirmação dentro do próprio menu (um clique errado não cancela o cliente). */
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const dragRef = useRef<DragState | null>(null);
   /** Após um arraste, o browser ainda dispara click — engolimos o próximo. */
   const swallowClickRef = useRef(false);
@@ -343,11 +345,17 @@ export function AgendaBoard({
     const menuH = 248;
     const x = Math.min(e.clientX, window.innerWidth - menuW - pad);
     const y = Math.min(e.clientY, window.innerHeight - menuH - pad);
+    setConfirmCancel(false);
     setStatusMenu({ entryId: entry.id, x: Math.max(pad, x), y: Math.max(pad, y) });
   }, []);
 
-  function applyStatus(entryId: string, to: AppointmentStatus) {
+  function closeStatusMenu() {
     setStatusMenu(null);
+    setConfirmCancel(false);
+  }
+
+  function applyStatus(entryId: string, to: AppointmentStatus) {
+    closeStatusMenu();
     startStatus(async () => {
       const r = await setAppointmentStatusAction(slug, entryId, to);
       if (r.status === "success") {
@@ -361,7 +369,10 @@ export function AgendaBoard({
 
   useEffect(() => {
     if (!statusMenu) return;
-    const closeMenu = () => setStatusMenu(null);
+    const closeMenu = () => {
+      setStatusMenu(null);
+      setConfirmCancel(false);
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeMenu();
     };
@@ -928,6 +939,8 @@ export function AgendaBoard({
           barbers={comanda.barbers}
           registerOpen={comanda.registerOpen}
           registerDay={comanda.registerDay}
+          packages={comanda.packages}
+          salePackages={comanda.salePackages}
           onClose={() => setComanda(null)}
           onCharged={charged}
           onSaved={savedComanda}
@@ -990,10 +1003,10 @@ export function AgendaBoard({
                 type="button"
                 aria-label="Fechar menu de situação"
                 className="fixed inset-0 z-[80] cursor-default bg-transparent"
-                onClick={() => setStatusMenu(null)}
+                onClick={closeStatusMenu}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  setStatusMenu(null);
+                  closeStatusMenu();
                 }}
               />
               <div
@@ -1002,19 +1015,48 @@ export function AgendaBoard({
                 className="fixed z-[81] w-[13.75rem] overflow-hidden rounded-xl border border-gold/30 bg-[#141414] py-1.5 shadow-[0_20px_50px_-16px_rgb(0_0_0/0.9)]"
                 style={{ left: statusMenu.x, top: statusMenu.y }}
               >
-                <p className="label-caps px-3 pb-1.5 pt-1 text-[0.55rem] text-muted-foreground">Situação</p>
-                {QUICK_STATUSES.map((s) => {
-                  const entry = entries.find((x) => x.id === statusMenu.entryId);
-                  const current = entry?.status === s.value;
-                  const danger = s.value === "cancelado";
-                  return (
-                    <button
-                      key={s.value}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={current}
-                      disabled={statusPending || current}
-                      onClick={() => applyStatus(statusMenu.entryId, s.value)}
+                {confirmCancel ? (
+                  <div className="px-3 py-2" role="alertdialog" aria-label="Confirmar cancelamento">
+                    <p className="text-sm font-medium text-cream">Cancelar este agendamento?</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {entries.find((x) => x.id === statusMenu.entryId)?.customerName ?? "Cliente"} ·{" "}
+                      {entries.find((x) => x.id === statusMenu.entryId)?.time} — o horário será liberado e o
+                      agendamento sai da agenda.
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        disabled={statusPending}
+                        onClick={() => applyStatus(statusMenu.entryId, "cancelado")}
+                        className="h-8 flex-1 cursor-pointer rounded-lg bg-destructive px-2 text-xs font-semibold text-white transition-colors hover:bg-destructive/85 disabled:opacity-50"
+                      >
+                        {statusPending ? "Cancelando…" : "Sim, cancelar"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={statusPending}
+                        onClick={() => setConfirmCancel(false)}
+                        className="h-8 flex-1 cursor-pointer rounded-lg border border-border px-2 text-xs text-cream transition-colors hover:border-gold/50 hover:text-gold disabled:opacity-50"
+                      >
+                        Voltar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="label-caps px-3 pb-1.5 pt-1 text-[0.55rem] text-muted-foreground">Situação</p>
+                    {QUICK_STATUSES.map((s) => {
+                      const entry = entries.find((x) => x.id === statusMenu.entryId);
+                      const current = entry?.status === s.value;
+                      const danger = s.value === "cancelado";
+                      return (
+                        <button
+                          key={s.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={current}
+                          disabled={statusPending || current}
+                          onClick={() => (danger ? setConfirmCancel(true) : applyStatus(statusMenu.entryId, s.value))}
                       className={cn(
                         "flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors disabled:cursor-default",
                         current
@@ -1025,12 +1067,14 @@ export function AgendaBoard({
                         statusPending && "opacity-50",
                       )}
                     >
-                      <span className={cn("h-3 w-1.5 shrink-0 rounded-full", statusRailClass(s.value))} aria-hidden="true" />
-                      <span className="min-w-0 flex-1 truncate">{s.label}</span>
-                      {current ? <Check className="size-3.5 shrink-0 text-gold" aria-hidden="true" /> : null}
-                    </button>
-                  );
-                })}
+                          <span className={cn("h-3 w-1.5 shrink-0 rounded-full", statusRailClass(s.value))} aria-hidden="true" />
+                          <span className="min-w-0 flex-1 truncate">{s.label}</span>
+                          {current ? <Check className="size-3.5 shrink-0 text-gold" aria-hidden="true" /> : null}
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
               </div>
             </>,
             document.body,

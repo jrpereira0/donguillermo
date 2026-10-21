@@ -85,7 +85,7 @@ export default async function ComissoesPage({
       <PageHeader
         eyebrow="Financeiro"
         title="Comissões"
-        description={`Produção, comissões e gorjetas dos barbeiros pelas comandas fechadas de ${periodLabel(period.de, period.ate)}. A comissão é sobre o valor dos itens de cada barbeiro (antes do desconto da comanda) e a gorjeta é integral dele.`}
+        description={`Produção, comissões e gorjetas dos barbeiros pelas comandas fechadas de ${periodLabel(period.de, period.ate)}. A comissão de serviços segue a tabela progressiva da rede (o % é o da faixa do faturamento de serviços dele em cada mês); produtos têm o % do cadastro e a gorjeta é integral dele.`}
       />
 
       <CommissionFilter basePath={`/u/${slug}/comissoes`} de={period.de} ate={period.ate} today={period.today} />
@@ -138,7 +138,7 @@ export default async function ComissoesPage({
                           ) : null}
                         </span>
                         <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                          {r.jobTitle} · {fmtPct(r.pctServices)} serviços · {fmtPct(r.pctProducts)} produtos
+                          {r.jobTitle} · {fmtPct(r.pctServices)} serviços (tabela) · {fmtPct(r.pctProducts)} produtos
                         </span>
                       </span>
                     </span>
@@ -160,8 +160,9 @@ export default async function ComissoesPage({
       </Panel>
 
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Toque em um barbeiro para ver as comandas, os itens mais vendidos e o cálculo completo dele no período. Os
-        percentuais vêm do cadastro do profissional (aba Comissões) e podem ser ajustados em Profissionais.
+        Toque em um barbeiro para ver as comandas, os itens mais vendidos e o cálculo completo dele no período. O
+        percentual de serviços vem da tabela progressiva da rede (faixa pelo faturamento de serviços de cada mês) e o
+        de produtos, do cadastro do profissional.
       </p>
     </div>
   );

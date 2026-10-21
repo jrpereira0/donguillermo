@@ -31,6 +31,7 @@ export type UnitArea =
   | "profissionais"
   | "servicos"
   | "produtos"
+  | "pacotes"
   | "caixa"
   | "comissoes"
   | "configuracoes"
@@ -42,6 +43,7 @@ export const AREA_ROLE: Record<UnitArea, AppRole> = {
   profissionais: "recepcao",
   servicos: "recepcao",
   produtos: "recepcao",
+  pacotes: "recepcao",
   caixa: "recepcao",
   comissoes: "recepcao",
   configuracoes: "recepcao",

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowDownLeft,
@@ -15,6 +15,7 @@ import {
   Plus,
   QrCode,
   Receipt,
+  TriangleAlert,
   Wallet,
 } from "lucide-react";
 import {
@@ -27,7 +28,7 @@ import { DialogShell } from "@/components/agenda/dialog-shell";
 import { AgendaDateField } from "@/components/agenda/mini-calendar";
 import { CashHistoryPanel } from "./cash-history";
 import { FormAlert } from "@/components/auth/form-alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { expectedCash, payMethodLabel, type PayMethod } from "@/lib/caixa/math";
 import type { CashMovement, CashTicketRow, CatalogBarber, ClosedRegister, MethodTotals, OpenRegister } from "@/lib/caixa/types";
@@ -129,6 +130,22 @@ function Kpi({
   );
 }
 
+/**
+ * Aviso de formulário que não fica velho na tela: some quando o usuário mexe
+ * nos campos do formulário (corrigindo o erro) e tem X para dispensar.
+ */
+function useFormAlert(state: FormState, editDeps: unknown[]) {
+  const [dismissed, setDismissed] = useState<FormState | null>(null);
+  useEffect(() => {
+    if (state.status === "error") setDismissed(state);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, editDeps);
+  return {
+    visible: state.status !== "idle" && !!state.message && state !== dismissed,
+    dismiss: () => setDismissed(state),
+  };
+}
+
 function CountBadge({ n, amber }: { n: number; amber?: boolean }) {
   return (
     <span
@@ -139,6 +156,291 @@ function CountBadge({ n, amber }: { n: number; amber?: boolean }) {
     >
       {n}
     </span>
+  );
+}
+
+/** Modal de abertura: monta do zero a cada abertura, sem aviso velho da vez anterior. */
+function OpenRegisterModal({ slug, onClose }: { slug: string; onClose: () => void }) {
+  const [state, action, pending] = useActionState(openRegisterAction.bind(null, slug), idle);
+  const [opening, setOpening] = useState("");
+  const [openDay, setOpenDay] = useState(() =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date()),
+  );
+  const alert = useFormAlert(state, [opening, openDay]);
+  return (
+    <DialogShell size="md" eyebrow="Financeiro" title="Abrir caixa" onClose={onClose}>
+      <form action={action} className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-col gap-4 px-5 py-5 sm:px-6">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Informe o dinheiro que já está na gaveta (o fundo de troco). Pode ser zero — dá para ajustar depois
+            com um suprimento.
+          </p>
+          {alert.visible ? (
+            <FormAlert tone="error" onClose={alert.dismiss}>
+              {state.message}
+            </FormAlert>
+          ) : null}
+          <div className="flex flex-col gap-1.5">
+            <span className="label-caps text-[0.65rem]">Dia do caixa</span>
+            <AgendaDateField
+              id="openDay"
+              name="businessDate"
+              value={openDay}
+              today={new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date())}
+              onChange={setOpenDay}
+            />
+            <span className="text-xs leading-relaxed text-muted-foreground">
+              É o dia a que este caixa pertence. Só pode existir <strong className="font-medium text-cream">um caixa por dia</strong>:
+              se esse dia já tiver caixa, é preciso reabrir o daquele dia pelo histórico.
+            </span>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="label-caps text-[0.65rem]">Fundo de caixa</span>
+            <span className="group relative">
+              <span className="pointer-events-none absolute inset-y-0 left-0 flex w-11 items-center justify-center text-sm text-muted-foreground group-focus-within:text-gold">
+                R$
+              </span>
+              <input
+                name="opening"
+                value={opening}
+                onChange={(e) => setOpening(maskMoney(e.target.value))}
+                inputMode="decimal"
+                placeholder="0,00"
+                aria-label="Fundo de caixa"
+                autoFocus
+                className="field-luxe h-12 w-full rounded-lg border border-input pr-3 pl-11 text-base tabular-nums outline-none"
+              />
+            </span>
+          </label>
+        </div>
+        <div className="mt-auto flex gap-2 border-t border-border/70 bg-[#141414] px-5 py-4 sm:px-6">
+          <Button type="button" variant="outline" size="lg" className="flex-1" onClick={onClose} disabled={pending}>
+            Cancelar
+          </Button>
+          <Button type="submit" variant="luxe" size="lg" className="flex-1" disabled={pending}>
+            {pending ? "Abrindo…" : "Abrir caixa"}
+            <ArrowRight className="transition-transform duration-300 group-hover/button:translate-x-1" />
+          </Button>
+        </div>
+      </form>
+    </DialogShell>
+  );
+}
+
+/** Sangria/suprimento da gaveta. Montado por caixa (key = registerId): aviso de um caixa não vaza para outro. */
+function MovementForm({ slug, registerId, esperado }: { slug: string; registerId: string; esperado: number }) {
+  const [state, action, pending] = useActionState(cashMovementAction.bind(null, slug, registerId), idle);
+  const [kind, setKind] = useState<"suprimento" | "sangria">("suprimento");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    if (state.status === "success") {
+      setAmount("");
+      setNote("");
+    }
+  }, [state]);
+  const alert = useFormAlert(state, [amount, kind, note]);
+  const amountCents = moneyToCents(amount) ?? 0;
+  const overLimit = kind === "sangria" && amountCents > Math.max(0, esperado);
+  return (
+    <form action={action} className="mt-4 flex flex-col gap-3 border-t border-border/70 pt-4">
+      {alert.visible ? (
+        <FormAlert tone={state.status === "error" ? "error" : "success"} onClose={alert.dismiss}>
+          {state.message}
+        </FormAlert>
+      ) : null}
+      <input type="hidden" name="kind" value={kind} />
+      <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border" role="group" aria-label="Tipo de movimento">
+        <button
+          type="button"
+          aria-pressed={kind === "suprimento"}
+          onClick={() => setKind("suprimento")}
+          className={cn(
+            "flex h-10 cursor-pointer items-center justify-center gap-1.5 text-xs",
+            kind === "suprimento" ? "bg-gold text-[#1a1408]" : "bg-black/20 text-muted-foreground hover:text-cream",
+          )}
+        >
+          <ArrowDownLeft className="size-3.5" /> Suprimento
+        </button>
+        <button
+          type="button"
+          aria-pressed={kind === "sangria"}
+          onClick={() => setKind("sangria")}
+          className={cn(
+            "flex h-10 cursor-pointer items-center justify-center gap-1.5 border-l border-border text-xs",
+            kind === "sangria" ? "bg-gold text-[#1a1408]" : "bg-black/20 text-muted-foreground hover:text-cream",
+          )}
+        >
+          <ArrowUpRight className="size-3.5" /> Sangria
+        </button>
+      </div>
+      <input
+        name="amount"
+        value={amount}
+        onChange={(e) => setAmount(maskMoney(e.target.value))}
+        inputMode="decimal"
+        placeholder="Valor"
+        aria-label="Valor do movimento"
+        aria-invalid={overLimit || undefined}
+        className={cn(field, "tabular-nums")}
+      />
+      {kind === "sangria" ? (
+        overLimit ? (
+          <p role="alert" className="text-xs leading-relaxed text-rose-300">
+            A sangria não pode passar do dinheiro na gaveta ({formatBRL(Math.max(0, esperado))}).
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Na gaveta: <span className="tabular-nums text-cream">{formatBRL(Math.max(0, esperado))}</span> — a sangria não pode passar disso.
+          </p>
+        )
+      ) : null}
+      <input
+        name="note"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Motivo (opcional)"
+        aria-label="Motivo do movimento"
+        className={field}
+      />
+      <Button type="submit" variant="outline" disabled={pending || overLimit} className="w-full">
+        {pending ? "Registrando…" : "Registrar movimento"}
+      </Button>
+    </form>
+  );
+}
+
+/** Nova comanda avulsa (balcão). O sucesso redireciona para a comanda; aqui só aparece erro. */
+function NewTicketForm({ slug, barbers }: { slug: string; barbers: CatalogBarber[] }) {
+  const [state, action, pending] = useActionState(createTicketAction.bind(null, slug), idle);
+  const [name, setName] = useState("");
+  const [barber, setBarber] = useState("none");
+  const alert = useFormAlert(state, [name, barber]);
+  const barberOptions = [{ value: "none", label: "Sem profissional" }, ...barbers.map((b) => ({ value: b.id, label: b.name }))];
+  return (
+    <form action={action} className="flex flex-col gap-3 px-5 py-4">
+      {alert.visible ? (
+        <FormAlert tone="error" onClose={alert.dismiss}>
+          {state.message}
+        </FormAlert>
+      ) : null}
+      <input
+        name="customerName"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Nome do cliente"
+        aria-label="Nome do cliente"
+        className={field}
+      />
+      <Select
+        name="barberId"
+        value={barber}
+        onValueChange={setBarber}
+        options={barberOptions}
+        placeholder="Profissional"
+        searchable
+        searchPlaceholder="Buscar profissional"
+      />
+      <Button type="submit" variant="luxe" disabled={pending} className="w-full">
+        <Plus /> {pending ? "Abrindo…" : "Abrir comanda"}
+      </Button>
+    </form>
+  );
+}
+
+/**
+ * Fechamento do caixa. Montado por caixa (key = registerId): o "Caixa fechado."
+ * de um fechamento nunca aparece dentro do caixa seguinte.
+ */
+function CloseRegisterForm({
+  slug,
+  registerId,
+  esperado,
+  blockingCount,
+  blockingCents,
+  waitingCount,
+}: {
+  slug: string;
+  registerId: string;
+  esperado: number;
+  /** Comandas abertas do dia DESTE caixa: só estas impedem o fechamento. */
+  blockingCount: number;
+  blockingCents: number;
+  /** Comandas abertas de outros dias: ficam esperando o caixa do dia delas. */
+  waitingCount: number;
+}) {
+  const [state, action, pending] = useActionState(closeRegisterAction.bind(null, slug, registerId), idle);
+  const [counted, setCounted] = useState("");
+  const [notes, setNotes] = useState("");
+  const alert = useFormAlert(state, [counted, notes]);
+  const countedCents = counted.trim() === "" ? null : moneyToCents(counted);
+  const diff = countedCents === null ? null : countedCents - esperado;
+  return (
+    <form action={action} className="flex flex-col gap-3 px-5 py-4">
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Conte o dinheiro da gaveta. O esperado é <span className="tabular-nums text-cream">{formatBRL(esperado)}</span>.
+      </p>
+      {alert.visible ? (
+        <FormAlert tone={state.status === "error" ? "error" : "success"} onClose={alert.dismiss}>
+          {state.message}
+        </FormAlert>
+      ) : null}
+      <label className="flex flex-col gap-1.5">
+        <span className="label-caps text-[0.65rem]">Dinheiro contado</span>
+        <input
+          name="counted"
+          value={counted}
+          onChange={(e) => setCounted(maskMoney(e.target.value))}
+          inputMode="decimal"
+          placeholder="0,00"
+          aria-label="Dinheiro contado"
+          className={cn(field, "tabular-nums")}
+        />
+      </label>
+      {diff !== null ? (
+        <p
+          className={cn(
+            "rounded-lg border px-3 py-2 text-xs",
+            diff === 0
+              ? "border-success/40 bg-success/10 text-emerald-200"
+              : "border-amber-300/40 bg-amber-300/10 text-amber-100",
+          )}
+          aria-live="polite"
+        >
+          {diff === 0
+            ? "Bate com o esperado. Pode fechar."
+            : diff > 0
+              ? `Sobra ${formatBRL(diff)} na gaveta.`
+              : `Falta ${formatBRL(-diff)} na gaveta.`}
+        </p>
+      ) : null}
+      <input
+        name="notes"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="Observação do fechamento"
+        aria-label="Observação do fechamento"
+        className={field}
+      />
+      {blockingCount > 0 ? (
+        <p className="rounded-lg border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
+          Ainda há {blockingCount} {blockingCount === 1 ? "comanda aberta" : "comandas abertas"} do dia deste caixa somando{" "}
+          {formatBRL(blockingCents)}. Receba ou cancele antes de fechar.
+        </p>
+      ) : waitingCount > 0 ? (
+        <p className="rounded-lg border border-border bg-black/25 px-3 py-2 text-xs text-muted-foreground">
+          {waitingCount === 1
+            ? "A comanda de outro dia fica aberta esperando o caixa do dia dela — não precisa cancelar."
+            : `As ${waitingCount} comandas de outros dias ficam abertas esperando o caixa do dia delas — não precisa cancelar.`}
+        </p>
+      ) : null}
+      <Button type="submit" variant="luxe" className="w-full" disabled={pending || blockingCount > 0}>
+        {pending ? "Fechando…" : "Fechar caixa"}
+      </Button>
+      <Link href={`/u/${slug}/caixa?aba=historico`} className="link-luxe label-caps inline-flex items-center gap-2 self-center py-1">
+        <Receipt className="size-3.5" /> Histórico de caixas
+      </Link>
+    </form>
   );
 }
 
@@ -161,18 +463,7 @@ export function CashDesk({
   barbers: CatalogBarber[];
   history: ClosedRegister[];
 }) {
-  const [openState, openAction, openPending] = useActionState(openRegisterAction.bind(null, slug), idle);
-  const [closeState, closeAction, closePending] = useActionState(closeRegisterAction.bind(null, slug, register?.id ?? ""), idle);
-  const [moveState, moveAction, movePending] = useActionState(cashMovementAction.bind(null, slug, register?.id ?? ""), idle);
-  const [newState, newAction, newPending] = useActionState(createTicketAction.bind(null, slug), idle);
-  const [moveKind, setMoveKind] = useState<"suprimento" | "sangria">("suprimento");
-  const [newBarber, setNewBarber] = useState("none");
-  const [counted, setCounted] = useState("");
   const [openModal, setOpenModal] = useState(false);
-  const [opening, setOpening] = useState("");
-  const [openDay, setOpenDay] = useState(() =>
-    new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date()),
-  );
 
   if (!register) {
     return (
@@ -199,62 +490,7 @@ export function CashDesk({
 
         <CashHistoryPanel slug={slug} history={history} />
 
-        {openModal ? (
-          <DialogShell size="md" eyebrow="Financeiro" title="Abrir caixa" onClose={() => setOpenModal(false)}>
-            <form action={openAction} className="flex min-h-0 flex-1 flex-col">
-              <div className="flex flex-col gap-4 px-5 py-5 sm:px-6">
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  Informe o dinheiro que já está na gaveta (o fundo de troco). Pode ser zero — dá para ajustar depois
-                  com um suprimento.
-                </p>
-                {openState.status === "error" && openState.message ? (
-                  <FormAlert tone="error">{openState.message}</FormAlert>
-                ) : null}
-                <div className="flex flex-col gap-1.5">
-                  <span className="label-caps text-[0.65rem]">Dia do caixa</span>
-                  <AgendaDateField
-                    id="openDay"
-                    name="businessDate"
-                    value={openDay}
-                    today={new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date())}
-                    onChange={setOpenDay}
-                  />
-                  <span className="text-xs leading-relaxed text-muted-foreground">
-                    É o dia a que este caixa pertence. Só pode existir <strong className="font-medium text-cream">um caixa por dia</strong>:
-                    se esse dia já tiver caixa, é preciso reabrir o daquele dia pelo histórico.
-                  </span>
-                </div>
-                <label className="flex flex-col gap-1.5">
-                  <span className="label-caps text-[0.65rem]">Fundo de caixa</span>
-                  <span className="group relative">
-                    <span className="pointer-events-none absolute inset-y-0 left-0 flex w-11 items-center justify-center text-sm text-muted-foreground group-focus-within:text-gold">
-                      R$
-                    </span>
-                    <input
-                      name="opening"
-                      value={opening}
-                      onChange={(e) => setOpening(maskMoney(e.target.value))}
-                      inputMode="decimal"
-                      placeholder="0,00"
-                      aria-label="Fundo de caixa"
-                      autoFocus
-                      className="field-luxe h-12 w-full rounded-lg border border-input pr-3 pl-11 text-base tabular-nums outline-none"
-                    />
-                  </span>
-                </label>
-              </div>
-              <div className="mt-auto flex gap-2 border-t border-border/70 bg-[#141414] px-5 py-4 sm:px-6">
-                <Button type="button" variant="outline" size="lg" className="flex-1" onClick={() => setOpenModal(false)} disabled={openPending}>
-                  Cancelar
-                </Button>
-                <Button type="submit" variant="luxe" size="lg" className="flex-1" disabled={openPending}>
-                  {openPending ? "Abrindo…" : "Abrir caixa"}
-                  <ArrowRight className="transition-transform duration-300 group-hover/button:translate-x-1" />
-                </Button>
-              </div>
-            </form>
-          </DialogShell>
-        ) : null}
+        {openModal ? <OpenRegisterModal slug={slug} onClose={() => setOpenModal(false)} /> : null}
       </div>
     );
   }
@@ -267,14 +503,29 @@ export function CashDesk({
     sangriaCents: sangria,
     dinheiroCents: methods.dinheiro,
   });
-  const faturado = methods.dinheiro + methods.pix + methods.debito + methods.credito;
+  const recebido = methods.dinheiro + methods.pix + methods.debito + methods.credito;
   const aReceber = openTickets.reduce((n, t) => n + t.totalCents, 0);
   const gorjetas = paidTickets.reduce((n, t) => n + t.tipCents, 0);
   const descontos = paidTickets.reduce((n, t) => n + t.discountCents, 0);
+  // Faturado é a receita da barbearia: total recebido SEM a gorjeta (que é do barbeiro).
+  const faturado = Math.max(0, recebido - gorjetas);
   const ticketMedio = paidTickets.length ? Math.round(faturado / paidTickets.length) : 0;
-  const countedCents = counted.trim() === "" ? null : moneyToCents(counted);
-  const diff = countedCents === null ? null : countedCents - esperado;
-  const barberOptions = [{ value: "none", label: "Sem profissional" }, ...barbers.map((b) => ({ value: b.id, label: b.name }))];
+
+  // Caixa esquecido aberto de outro dia: as comandas de hoje não entram nele
+  // (só no caixa do dia delas) — a recepção precisa ver isso de cara.
+  const spDayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" });
+  const todaySP = spDayFmt.format(new Date());
+  const staleRegister = register.businessDate < todaySP;
+  const futureRegister = register.businessDate > todaySP;
+  const staleLabel =
+    register.businessDate === spDayFmt.format(new Date(Date.now() - 86_400_000))
+      ? "ontem"
+      : dateFmt.format(new Date(`${register.businessDate}T12:00:00`));
+  const todayOpenCount = openTickets.filter((t) => spDayFmt.format(new Date(t.openedAt)) === todaySP).length;
+  // Só as comandas do dia DESTE caixa impedem o fechamento; as dos outros
+  // dias ficam abertas esperando o caixa delas (mesma regra da RPC).
+  const dayOpenTickets = openTickets.filter((t) => spDayFmt.format(new Date(t.openedAt)) === register.businessDate);
+  const dayOpenCents = dayOpenTickets.reduce((n, t) => n + t.totalCents, 0);
 
   const gavetaLine = (label: string, value: string, tone?: "plus" | "minus") => (
     <div className="flex items-center justify-between gap-3 py-1 text-sm">
@@ -287,6 +538,34 @@ export function CashDesk({
 
   return (
     <div className="flex flex-col gap-6">
+      {staleRegister || futureRegister ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-4 rounded-2xl border border-amber-300/50 bg-amber-300/10 px-5 py-4"
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full border border-amber-300/50 bg-amber-300/15 text-amber-200">
+            <TriangleAlert className="size-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-heading text-lg font-semibold uppercase tracking-wide text-amber-100">
+              {staleRegister
+                ? `O caixa de ${staleLabel} ainda está aberto`
+                : `O caixa aberto é de ${dateFmt.format(new Date(`${register.businessDate}T12:00:00`))}`}
+            </h2>
+            <p className="mt-0.5 text-sm leading-relaxed text-amber-100/80">
+              As comandas de hoje só podem ser recebidas no caixa de hoje.
+              {todayOpenCount
+                ? ` Há ${todayOpenCount} ${todayOpenCount === 1 ? "comanda de hoje esperando" : "comandas de hoje esperando"}.`
+                : ""}{" "}
+              Feche este caixa para abrir o de hoje.
+            </p>
+          </div>
+          <a href="#fechar-caixa" className={buttonVariants({ variant: "luxe", size: "lg" })}>
+            Fechar este caixa
+          </a>
+        </div>
+      ) : null}
+
       <div className="reveal flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-gold/25 bg-[#14120e] px-4 py-3 sm:px-5">
         <span className="inline-flex items-center gap-2 text-sm text-cream">
           <span className="size-2 rounded-full bg-success shadow-[0_0_8px_rgb(143_191_106/0.8)]" aria-hidden="true" />
@@ -307,14 +586,14 @@ export function CashDesk({
           icon={Receipt}
           label="Faturado"
           value={formatBRL(faturado)}
-          hint={paidTickets.length ? `${paidTickets.length} comandas · média ${formatBRL(ticketMedio)}` : "Nenhuma comanda recebida"}
+          hint={paidTickets.length ? `${paidTickets.length} ${paidTickets.length === 1 ? "comanda" : "comandas"} · média ${formatBRL(ticketMedio)}` : "Nenhuma comanda recebida"}
           accent="gold"
         />
         <Kpi
           icon={Clock3}
           label="A receber"
           value={formatBRL(aReceber)}
-          hint={openTickets.length ? `${openTickets.length} aberta(s) · mais antiga ${waitingLabel(openTickets[0].openedAt)}` : "Nenhuma comanda aberta"}
+          hint={openTickets.length ? `${openTickets.length} ${openTickets.length === 1 ? "aberta" : "abertas"} · mais antiga ${waitingLabel(openTickets[0].openedAt)}` : "Nenhuma comanda aberta"}
           accent={openTickets.length ? "amber" : "cream"}
         />
         <Kpi icon={HandCoins} label="Gorjetas" value={formatBRL(gorjetas)} hint={descontos ? `Descontos dados: ${formatBRL(descontos)}` : "Nas comandas recebidas"} />
@@ -393,7 +672,7 @@ export function CashDesk({
             <ul className="flex flex-col gap-4 px-5 py-4">
               {(Object.keys(methods) as PayMethod[]).map((k) => {
                 const Icon = METHOD_ICONS[k];
-                const pct = faturado > 0 ? Math.round((methods[k] / faturado) * 100) : 0;
+                const pct = recebido > 0 ? Math.round((methods[k] / recebido) * 100) : 0;
                 return (
                   <li key={k}>
                     <div className="flex items-center gap-2 text-sm">
@@ -428,41 +707,7 @@ export function CashDesk({
                 <span className="font-heading text-2xl leading-none tabular-nums text-gold">{formatBRL(esperado)}</span>
               </div>
 
-              <form action={moveAction} className="mt-4 flex flex-col gap-3 border-t border-border/70 pt-4">
-                {moveState.status !== "idle" && moveState.message ? (
-                  <FormAlert tone={moveState.status === "error" ? "error" : "success"}>{moveState.message}</FormAlert>
-                ) : null}
-                <input type="hidden" name="kind" value={moveKind} />
-                <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border" role="group" aria-label="Tipo de movimento">
-                  <button
-                    type="button"
-                    aria-pressed={moveKind === "suprimento"}
-                    onClick={() => setMoveKind("suprimento")}
-                    className={cn(
-                      "flex h-10 cursor-pointer items-center justify-center gap-1.5 text-xs",
-                      moveKind === "suprimento" ? "bg-gold text-[#1a1408]" : "bg-black/20 text-muted-foreground hover:text-cream",
-                    )}
-                  >
-                    <ArrowDownLeft className="size-3.5" /> Suprimento
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={moveKind === "sangria"}
-                    onClick={() => setMoveKind("sangria")}
-                    className={cn(
-                      "flex h-10 cursor-pointer items-center justify-center gap-1.5 border-l border-border text-xs",
-                      moveKind === "sangria" ? "bg-gold text-[#1a1408]" : "bg-black/20 text-muted-foreground hover:text-cream",
-                    )}
-                  >
-                    <ArrowUpRight className="size-3.5" /> Sangria
-                  </button>
-                </div>
-                <input name="amount" inputMode="decimal" placeholder="Valor" aria-label="Valor do movimento" className={cn(field, "tabular-nums")} />
-                <input name="note" placeholder="Motivo (opcional)" aria-label="Motivo do movimento" className={field} />
-                <Button type="submit" variant="outline" disabled={movePending} className="w-full">
-                  {movePending ? "Registrando…" : "Registrar movimento"}
-                </Button>
-              </form>
+              <MovementForm key={register.id} slug={slug} registerId={register.id} esperado={esperado} />
 
               {movements.length > 0 ? (
                 <ul className="scroll-luxe mt-4 flex max-h-44 flex-col gap-1 overflow-y-auto border-t border-border/70 pt-3 pr-1">
@@ -485,74 +730,22 @@ export function CashDesk({
           </Panel>
 
           <Panel icon={Plus} title="Nova comanda">
-            <form action={newAction} className="flex flex-col gap-3 px-5 py-4">
-              {newState.status === "error" && newState.message ? <FormAlert tone="error">{newState.message}</FormAlert> : null}
-              <input name="customerName" placeholder="Nome do cliente" aria-label="Nome do cliente" className={field} />
-              <Select
-                name="barberId"
-                value={newBarber}
-                onValueChange={setNewBarber}
-                options={barberOptions}
-                placeholder="Profissional"
-                searchable
-                searchPlaceholder="Buscar profissional"
-              />
-              <Button type="submit" variant="luxe" disabled={newPending} className="w-full">
-                <Plus /> {newPending ? "Abrindo…" : "Abrir comanda"}
-              </Button>
-            </form>
+            <NewTicketForm slug={slug} barbers={barbers} />
           </Panel>
 
-          <Panel icon={Receipt} title="Fechar caixa">
-            <form action={closeAction} className="flex flex-col gap-3 px-5 py-4">
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                Conte o dinheiro da gaveta. O esperado é <span className="tabular-nums text-cream">{formatBRL(esperado)}</span>.
-              </p>
-              {closeState.status === "error" && closeState.message ? <FormAlert tone="error">{closeState.message}</FormAlert> : null}
-              {closeState.status === "success" && closeState.message ? <FormAlert tone="success">{closeState.message}</FormAlert> : null}
-              <label className="flex flex-col gap-1.5">
-                <span className="label-caps text-[0.65rem]">Dinheiro contado</span>
-                <input
-                  name="counted"
-                  value={counted}
-                  onChange={(e) => setCounted(maskMoney(e.target.value))}
-                  inputMode="decimal"
-                  placeholder="0,00"
-                  aria-label="Dinheiro contado"
-                  className={cn(field, "tabular-nums")}
-                />
-              </label>
-              {diff !== null ? (
-                <p
-                  className={cn(
-                    "rounded-lg border px-3 py-2 text-xs",
-                    diff === 0
-                      ? "border-success/40 bg-success/10 text-emerald-200"
-                      : "border-amber-300/40 bg-amber-300/10 text-amber-100",
-                  )}
-                  aria-live="polite"
-                >
-                  {diff === 0
-                    ? "Bate com o esperado. Pode fechar."
-                    : diff > 0
-                      ? `Sobra ${formatBRL(diff)} na gaveta.`
-                      : `Falta ${formatBRL(-diff)} na gaveta.`}
-                </p>
-              ) : null}
-              <input name="notes" placeholder="Observação do fechamento" aria-label="Observação do fechamento" className={field} />
-              {openTickets.length > 0 ? (
-                <p className="rounded-lg border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
-                  Ainda há {openTickets.length} comanda(s) aberta(s) somando {formatBRL(aReceber)}. Receba ou cancele antes de fechar.
-                </p>
-              ) : null}
-              <Button type="submit" variant="luxe" className="w-full" disabled={closePending || openTickets.length > 0}>
-                {closePending ? "Fechando…" : "Fechar caixa"}
-              </Button>
-              <Link href={`/u/${slug}/caixa?aba=historico`} className="link-luxe label-caps inline-flex items-center gap-2 self-center py-1">
-                <Receipt className="size-3.5" /> Histórico de caixas
-              </Link>
-            </form>
-          </Panel>
+          <div id="fechar-caixa" className="scroll-mt-6">
+            <Panel icon={Receipt} title="Fechar caixa">
+              <CloseRegisterForm
+                key={register.id}
+                slug={slug}
+                registerId={register.id}
+                esperado={esperado}
+                blockingCount={dayOpenTickets.length}
+                blockingCents={dayOpenCents}
+                waitingCount={openTickets.length - dayOpenTickets.length}
+              />
+            </Panel>
+          </div>
         </aside>
       </div>
     </div>

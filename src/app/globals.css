@@ -824,6 +824,15 @@ input:autofill {
 .select-luxe[data-state="open"] {
   animation: select-in 0.16s ease-out;
 }
+
+/* Só UMA opção marcada por vez: enquanto o mouse está sobre uma opção da
+   lista, qualquer outro destaque (a "primeira opção" fixa ou o item que o
+   Radix manteve destacado) apaga — vale para todos os dropdowns do sistema. */
+.select-luxe:has([role="option"]:hover) [data-highlighted]:not(:hover) {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--color-muted-foreground);
+}
 @keyframes select-in {
   from {
     opacity: 0;

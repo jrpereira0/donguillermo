@@ -7,6 +7,7 @@ import { BarberPasswordForm } from "@/components/unit/barber-password-form";
 import { FormSection } from "@/components/unit/form-parts";
 import { PageHeader } from "@/components/unit/page-header";
 import { Button } from "@/components/ui/button";
+import { ConfirmSubmitForm } from "@/components/ui/confirm-submit-form";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { barberPhotoUrl } from "@/lib/barbers/photo";
 import { getBarber } from "@/lib/barbers/queries";
@@ -49,7 +50,6 @@ function toDefaults(b: BarberRow, serviceMinutes: Record<string, string>): Barbe
     instagram: s("instagram"),
     facebook: s("facebook"),
     tiktok: s("tiktok"),
-    commissionServices: num(b.commission_services_pct),
     commissionProducts: num(b.commission_products_pct),
     workHours: b.work_hours,
     photoPath: b.photo_path ?? "",
@@ -95,12 +95,27 @@ export default async function EditarProfissionalPage({
             : "Volta às listas e recupera o acesso ao sistema."
         }
       >
-        <form action={toggleBarberActiveAction.bind(null, slug, barber.id, !barber.is_active)}>
-          <Button type="submit" variant="outline" size="sm">
-            <Power />
-            {barber.is_active ? "Desativar" : "Reativar"}
-          </Button>
-        </form>
+        {barber.is_active ? (
+          <ConfirmSubmitForm
+            action={toggleBarberActiveAction.bind(null, slug, barber.id, false)}
+            label={
+              <>
+                <Power />
+                Desativar
+              </>
+            }
+            title={`Desativar ${barber.display_name}?`}
+            description="Ele some das listas, da agenda e perde o acesso ao sistema. Os dados e o histórico ficam guardados e dá para reativar depois."
+            confirmLabel="Sim, desativar"
+          />
+        ) : (
+          <form action={toggleBarberActiveAction.bind(null, slug, barber.id, true)}>
+            <Button type="submit" variant="outline" size="sm">
+              <Power />
+              Reativar
+            </Button>
+          </form>
+        )}
       </FormSection>
     </>
   );

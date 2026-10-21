@@ -113,7 +113,7 @@ As telas de `/u/<slug>/*` usam estas peças. Antes de criar outra, reaproveite.
 |---|---|---|
 | `UnitShell` + `UnitSidebar` | `src/components/unit/` | Moldura da unidade: menu lateral (recolhe no celular) com a marca, unidade, e-mail e **Sair**. A borda dourada fina vem de `.sidebar-edge` (`globals.css`). Os itens do menu saem de `nav.ts` por papel |
 | `PageHeader` | `src/components/unit/page-header.tsx` | Eyebrow, título e descrição da página, com área de ações |
-| `ComingSoon` | `src/components/unit/coming-soon.tsx` | Página "Em breve" dos módulos ainda não construídos |
+| `ComingSoon` | `src/components/unit/coming-soon.tsx` | Página "Em breve". Hoje só a Minha agenda do barbeiro |
 | `FormSection` / `Field` | `src/components/unit/form-parts.tsx` | Bloco de formulário com título e campo com rótulo, dica e erro no padrão (erro some ao corrigir) |
 | `TabList` | `src/components/unit/tab-list.tsx` | Abas da ficha (cadastros de profissional e cliente). Ids `<ficha>-tab-<id>` e `<ficha>-panel-<id>`; teclado e acessibilidade já tratados |
 | `Select`, `Switch`, `Textarea` | `src/components/ui/` | Campos no padrão da marca (lista própria, não o `<select>` do navegador) |

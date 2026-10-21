@@ -102,7 +102,7 @@ export default async function ComissaoBarbeiroPage({
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="label-caps rounded-full border border-gold/40 bg-gold/10 px-3 py-1.5 text-[0.6rem] text-gold">
-            {fmtPct(barber.pctServices)} sobre serviços
+            Serviços: tabela progressiva{detail.bracketRange ? ` (${detail.bracketRange})` : ""}
           </span>
           <span className="label-caps rounded-full border border-gold/40 bg-gold/10 px-3 py-1.5 text-[0.6rem] text-gold">
             {fmtPct(barber.pctProducts)} sobre produtos
@@ -119,7 +119,7 @@ export default async function ComissaoBarbeiroPage({
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi label="A receber no período" value={formatBRL(totalReceber)} hint="Comissão + gorjetas" accent="gold" />
-        <Kpi label="Comissão" value={formatBRL(detail.commissionCents)} hint={`${fmtPct(barber.pctServices)} de serviços · ${fmtPct(barber.pctProducts)} de produtos`} />
+        <Kpi label="Comissão" value={formatBRL(detail.commissionCents)} hint="Serviços pela faixa do mês · produtos pelo % do cadastro" />
         <Kpi label="Produção" value={formatBRL(producao)} hint={`${detail.tickets.length} ${detail.tickets.length === 1 ? "comanda" : "comandas"} com itens dele`} />
         <Kpi label="Atendimentos concluídos" value={String(detail.appointmentsDone)} hint="Na agenda, no período" />
       </section>
@@ -179,12 +179,21 @@ export default async function ComissaoBarbeiroPage({
                 <span>Serviços vendidos</span>
                 <span className="tabular-nums text-cream">{formatBRL(detail.servicesCents)}</span>
               </span>
-              <span className="flex justify-between gap-3 py-1 text-muted-foreground">
-                <span>Comissão de serviços ({fmtPct(barber.pctServices)})</span>
-                <span className="tabular-nums text-cream">
-                  {formatBRL(Math.round((detail.servicesCents * barber.pctServices) / 100))}
+              {detail.months.length ? (
+                detail.months.map((m) => (
+                  <span key={m.key} className="flex justify-between gap-3 py-1 text-muted-foreground">
+                    <span>
+                      Comissão de {m.label} ({fmtPct(m.pct)} de {formatBRL(m.servicesCents)})
+                    </span>
+                    <span className="tabular-nums text-cream">{formatBRL(m.commissionCents)}</span>
+                  </span>
+                ))
+              ) : (
+                <span className="flex justify-between gap-3 py-1 text-muted-foreground">
+                  <span>Comissão de serviços</span>
+                  <span className="tabular-nums text-cream">{formatBRL(0)}</span>
                 </span>
-              </span>
+              )}
               <span className="flex justify-between gap-3 py-1 text-muted-foreground">
                 <span>Produtos vendidos</span>
                 <span className="tabular-nums text-cream">{formatBRL(detail.productsCents)}</span>
@@ -206,8 +215,8 @@ export default async function ComissaoBarbeiroPage({
                 </span>
               </div>
               <p className="mt-3 text-[0.7rem] leading-relaxed text-muted-foreground">
-                Comissão sobre o valor dos itens do barbeiro, antes do desconto da comanda. Percentuais do cadastro
-                do profissional.
+                Comissão sobre o valor dos itens do barbeiro, antes do desconto da comanda. Serviços: tabela
+                progressiva da rede, com o % da faixa do faturamento dele em cada mês. Produtos: % do cadastro.
               </p>
             </div>
           </Panel>
@@ -236,14 +245,16 @@ export default async function ComissaoBarbeiroPage({
             <div className="flex flex-col gap-2 px-5 py-4 text-sm text-muted-foreground">
               <span className="flex justify-between gap-3">
                 <span>Sobre serviços</span>
-                <span className="font-medium tabular-nums text-cream">{fmtPct(barber.pctServices)}</span>
+                <span className="text-right font-medium tabular-nums text-cream">
+                  Tabela progressiva{detail.bracketRange ? ` (${detail.bracketRange})` : ""}
+                </span>
               </span>
               <span className="flex justify-between gap-3">
                 <span>Sobre produtos</span>
                 <span className="font-medium tabular-nums text-cream">{fmtPct(barber.pctProducts)}</span>
               </span>
               <Link href={`/u/${slug}/profissionais/${barber.id}`} className="link-luxe label-caps mt-2 inline-block py-1 text-[0.6rem]">
-                Editar no cadastro do profissional
+                Editar produtos no cadastro do profissional
               </Link>
             </div>
           </Panel>

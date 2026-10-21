@@ -17,7 +17,14 @@ import type {
 const emptyMethods = (): MethodTotals => ({ dinheiro: 0, pix: 0, debito: 0, credito: 0 });
 
 type PayRow = { register_id: string; method: PayMethod; amount_cents: number };
-type ItemRow = { name: string; quantity: number; unit_price_cents: number; position: number };
+type ItemRow = {
+  name: string;
+  quantity: number;
+  unit_price_cents: number;
+  position: number;
+  kind?: string;
+  customer_package_id?: string | null;
+};
 
 function toTicket(row: {
   id: string;
@@ -33,7 +40,11 @@ function toTicket(row: {
 }): CashTicketRow {
   const lines = [...(row.ticket_items ?? [])].sort((a, b) => a.position - b.position);
   const total = ticketTotals(
-    lines.map((l) => ({ quantity: l.quantity, unitPriceCents: l.unit_price_cents })),
+    lines.map((l) => ({
+      quantity: l.quantity,
+      unitPriceCents: l.unit_price_cents,
+      packageCovered: l.kind === "servico" && !!l.customer_package_id,
+    })),
     row.discount_cents,
     row.tip_cents ?? 0,
   ).total;
@@ -159,7 +170,7 @@ export async function listRegisterEvents(registerId: string): Promise<RegisterEv
 }
 
 const TICKET_LIST =
-  "id, customer_name, barber_name, status, opened_at, closed_at, discount_cents, tip_cents, ticket_items(name, quantity, unit_price_cents, position), ticket_payments(method, amount_cents, installments)";
+  "id, customer_name, barber_name, status, opened_at, closed_at, discount_cents, tip_cents, ticket_items(name, quantity, unit_price_cents, position, kind, customer_package_id), ticket_payments(method, amount_cents, installments)";
 
 export async function listOpenTickets(unitId: string): Promise<CashTicketRow[]> {
   const supabase = await createClient();
@@ -200,7 +211,7 @@ export async function getTicket(unitId: string, id: string): Promise<TicketDetai
   const { data, error } = await supabase
     .from("tickets")
     .select(
-      "id, status, customer_id, customer_name, barber_id, barber_name, discount_cents, tip_cents, notes, opened_at, closed_at, appointment_id, ticket_items(kind, service_id, name, quantity, unit_price_cents, barber_id, position), ticket_tips(barber_id, barber_name, amount_cents, position), ticket_payments(method, amount_cents, installments)",
+      "id, status, customer_id, customer_name, barber_id, barber_name, discount_cents, tip_cents, notes, opened_at, closed_at, appointment_id, ticket_items(kind, service_id, name, quantity, unit_price_cents, barber_id, position, customer_package_id, package_id, customer_packages(package_name)), ticket_tips(barber_id, barber_name, amount_cents, position), ticket_payments(method, amount_cents, installments)",
     )
     .eq("id", id)
     .eq("unit_id", unitId)
@@ -218,13 +229,16 @@ export async function getTicket(unitId: string, id: string): Promise<TicketDetai
       closed_at: string | null;
       appointment_id: string | null;
       ticket_items: {
-        kind: "servico" | "produto";
+        kind: "servico" | "produto" | "pacote";
         service_id: string | null;
         name: string;
         quantity: number;
         unit_price_cents: number;
         barber_id: string | null;
         position: number;
+        customer_package_id: string | null;
+        package_id: string | null;
+        customer_packages: { package_name: string } | null;
       }[];
       ticket_tips: { barber_id: string; barber_name: string | null; amount_cents: number; position: number }[] | null;
       ticket_payments: { method: PayMethod; amount_cents: number; installments: number | null }[];
@@ -248,12 +262,15 @@ export async function getTicket(unitId: string, id: string): Promise<TicketDetai
     closedAt: data.closed_at,
     appointmentId: data.appointment_id,
     lines: lines.map((l) => ({
-      kind: l.kind === "produto" ? "produto" : "servico",
+      kind: l.kind === "produto" ? "produto" : l.kind === "pacote" ? "pacote" : "servico",
       serviceId: l.service_id,
       name: l.name,
       quantity: l.quantity,
       unitPriceCents: l.unit_price_cents,
       barberId: l.barber_id,
+      customerPackageId: l.customer_package_id ?? null,
+      packageId: l.package_id ?? null,
+      packageName: l.customer_packages?.package_name ?? null,
     })),
     tips: [...(data.ticket_tips ?? [])]
       .sort((a, b) => a.position - b.position)
@@ -349,12 +366,17 @@ export async function listClosedRegisters(
 
   const { data: counts } = await supabase
     .from("tickets")
-    .select("register_id")
+    .select("register_id, tip_cents")
     .in("register_id", ids)
     .eq("status", "fechada")
-    .returns<{ register_id: string }[]>();
+    .returns<{ register_id: string; tip_cents: number | null }[]>();
   const nBy = new Map<string, number>();
-  for (const t of counts ?? []) nBy.set(t.register_id, (nBy.get(t.register_id) ?? 0) + 1);
+  const tipsBy = new Map<string, number>();
+  for (const t of counts ?? []) {
+    nBy.set(t.register_id, (nBy.get(t.register_id) ?? 0) + 1);
+    // Gorjeta é do barbeiro, não receita: o "Faturado" do caixa é líquido dela.
+    tipsBy.set(t.register_id, (tipsBy.get(t.register_id) ?? 0) + (t.tip_cents ?? 0));
+  }
 
   return data.map((r) => ({
     id: r.id,
@@ -368,7 +390,7 @@ export async function listClosedRegisters(
     expectedCashCents: r.expected_cash_cents,
     countedCashCents: r.counted_cash_cents,
     ticketCount: nBy.get(r.id) ?? 0,
-    totalCents: byReg.get(r.id) ?? 0,
+    totalCents: Math.max(0, (byReg.get(r.id) ?? 0) - (tipsBy.get(r.id) ?? 0)),
   }));
 }
 

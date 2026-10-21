@@ -5,7 +5,7 @@ export const CUSTOMER_PHOTO_BUCKET = "customer-photos";
 
 /** Campos lidos pelas telas (a RLS já limita a admin e recepção). */
 export const CUSTOMER_COLUMNS =
-  "id, created_unit_id, registered_via, full_name, phone, email, birth_date, cpf, photo_path, cep, street, street_number, complement, neighborhood, city, state, preferred_barber_id, referral_source, marketing_consent, consent_at, is_active, created_at, updated_at";
+  "id, created_unit_id, registered_via, full_name, phone, email, birth_date, cpf, photo_path, cep, street, street_number, complement, neighborhood, city, state, referral_source, marketing_consent, consent_at, is_active, created_at, updated_at";
 
 export type CustomerRow = {
   id: string;
@@ -24,7 +24,6 @@ export type CustomerRow = {
   neighborhood: string | null;
   city: string | null;
   state: string | null;
-  preferred_barber_id: string | null;
   referral_source: string | null;
   marketing_consent: boolean;
   consent_at: string | null;

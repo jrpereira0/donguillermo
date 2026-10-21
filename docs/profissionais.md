@@ -6,7 +6,7 @@
 
 | Rota | O que faz |
 |---|---|
-| `/u/<slug>/profissionais` | Lista com busca (nome, apelido, função, telefone, e-mail). Linha inteira abre a edição; botão de WhatsApp ao lado do celular; ativar/desativar |
+| `/u/<slug>/profissionais` | Lista com busca (nome, apelido, função, telefone, e-mail). Linha inteira abre a edição; botão de WhatsApp ao lado do celular. Desativar pede confirmação na própria linha; reativar é direto |
 | `/u/<slug>/profissionais/novo` | Cadastro em abas |
 | `/u/<slug>/profissionais/<id>` | Edição nas mesmas abas |
 
@@ -16,7 +16,7 @@
 - **Acesso**: e-mail e senha (cadastro). Na edição: trocar senha e ativar/desativar.
 - **Horários**: um dia por vez (faixa Seg a Dom). Quatro horários: entrada, saída para o almoço, volta e saída; o intervalo é o almoço (opcional). "Folga" por dia e atalhos para copiar para todos os dias ou de segunda a sexta.
 - **Serviços**: marca os serviços que o profissional faz e ajusta a duração de cada um (padrão do serviço ou outra). Detalhes em [servicos.md](servicos.md).
-- **Comissões**: percentual sobre serviços e sobre produtos.
+- **Comissões**: só o percentual sobre **produtos**. Serviços seguem a tabela progressiva da rede (admin, `/admin/comissoes`), não um percentual deste cadastro.
 
 Tudo é salvo por um único botão. A aba com erro ganha um ponto vermelho e abre sozinha.
 
@@ -30,7 +30,7 @@ Tudo é salvo por um único botão. A aba com erro ganha um ponto vermelho e abr
 | E-mail | Formato válido; vira minúsculo. Recusa e-mail que já tem conta |
 | Função | `barbeiro`, `recepcionista`, `gerente`, `lider` ou `auxiliar` |
 | Horários | HH:MM; entrada < saída p/ almoço < volta < saída; almoço com os dois horários ou nenhum |
-| Comissão | 0 a 100, até 2 casas |
+| Comissão de produtos | 0 a 100, até 2 casas. Serviços não têm campo aqui |
 
 > **A função é informativa.** Não muda permissões: todo profissional cadastrado por esta tela entra com o papel `barbeiro` (menu limitado e agenda própria). Papéis próprios para Gerente/Recepcionista exigem mudar o controle de acesso.
 

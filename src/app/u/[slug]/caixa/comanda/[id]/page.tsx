@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarDays, UserRound } from "lucide-react";
-import { cancelTicketAction } from "../../actions";
+import { cancelTicketAction, salePackageOptions, usablePackages } from "../../actions";
 import { TicketEditor } from "@/components/caixa/ticket-editor";
 import { PageHeader } from "@/components/unit/page-header";
-import { Button } from "@/components/ui/button";
+import { ConfirmSubmitForm } from "@/components/ui/confirm-submit-form";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { getOpenRegister, getTicket, listCatalog } from "@/lib/caixa/queries";
 import { cn } from "@/lib/utils";
@@ -32,11 +32,17 @@ export default async function ComandaPage({ params }: { params: Promise<{ slug: 
     getOpenRegister(unit.id),
   ]);
   if (!ticket) notFound();
+  const [packages, salePackages] = await Promise.all([
+    usablePackages(unit.id, ticket),
+    salePackageOptions(unit.id),
+  ]);
 
   const status = STATUS[ticket.status];
 
   return (
-    <div className="flex flex-col gap-6">
+    // Altura da tela (descontando o py-10 do <main>): a comanda não rola;
+    // só a lista de itens rola, dentro do painel.
+    <div className="flex flex-col gap-6 lg:h-[calc(100dvh-5rem)]">
       <div className="flex flex-wrap items-center gap-3">
         <Link href={`/u/${slug}/caixa`} className="link-luxe label-caps inline-flex w-fit items-center gap-2 py-1">
           <ArrowLeft className="size-3.5" />
@@ -83,11 +89,14 @@ export default async function ComandaPage({ params }: { params: Promise<{ slug: 
         }
         action={
           ticket.status === "aberta" ? (
-            <form action={cancelTicketAction.bind(null, slug, ticket.id)}>
-              <Button type="submit" variant="outline" size="sm" className="hover:border-destructive/60 hover:text-rose-300">
-                Cancelar comanda
-              </Button>
-            </form>
+            <ConfirmSubmitForm
+              action={cancelTicketAction.bind(null, slug, ticket.id)}
+              label="Cancelar comanda"
+              title="Cancelar esta comanda?"
+              description="Os itens lançados serão descartados e a comanda sai das abertas. Isso não tem volta."
+              confirmLabel="Sim, cancelar comanda"
+              className="hover:border-destructive/60 hover:text-rose-300"
+            />
           ) : null
         }
       />
@@ -102,6 +111,8 @@ export default async function ComandaPage({ params }: { params: Promise<{ slug: 
         barbers={catalog.barbers}
         registerOpen={!!register}
         registerDay={register?.businessDate ?? null}
+        packages={packages}
+        salePackages={salePackages}
       />
     </div>
   );

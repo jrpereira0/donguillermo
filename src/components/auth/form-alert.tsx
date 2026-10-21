@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, Info } from "lucide-react";
+import { CircleAlert, CircleCheck, Info, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -7,6 +7,8 @@ type Props = {
   title?: string;
   children: React.ReactNode;
   className?: string;
+  /** Mostra um X para dispensar o aviso (mensagem velha não fica presa na tela). */
+  onClose?: () => void;
 };
 
 const ICONS = { error: CircleAlert, success: CircleCheck, info: Info } as const;
@@ -17,7 +19,7 @@ const ICONS = { error: CircleAlert, success: CircleCheck, info: Info } as const;
  * título curto e deixe a explicação em `children`. `error` usa role="alert"
  * (leitores de tela anunciam na hora) e treme levemente ao aparecer.
  */
-export function FormAlert({ tone, title, children, className }: Props) {
+export function FormAlert({ tone, title, children, className, onClose }: Props) {
   const Icon = ICONS[tone];
   return (
     <div
@@ -38,6 +40,16 @@ export function FormAlert({ tone, title, children, className }: Props) {
           children
         )}
       </div>
+      {onClose ? (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Fechar aviso"
+          className="-mr-1 -mt-0.5 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-cream"
+        >
+          <X className="size-3.5" aria-hidden="true" />
+        </button>
+      ) : null}
     </div>
   );
 }

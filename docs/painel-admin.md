@@ -6,7 +6,8 @@
 
 | Rota | O que faz |
 |---|---|
-| `/admin` | Cartões das unidades (nome, endereço `/u/<slug>`, status Ativa/Inativa, recepção vinculada). Botão **Nova unidade** e ativar/desativar |
+| `/admin` | Cartões das unidades (nome, endereço `/u/<slug>`, status Ativa/Inativa, recepção vinculada). Botões **Tabela de comissões** e **Nova unidade**; ativar/desativar |
+| `/admin/comissoes` | Tabela progressiva da comissão de serviços (faixas De/Até/%). Vale para todas as unidades. Produtos ficam de fora: cada profissional tem o percentual dele |
 | `/admin/unidades/nova` | Cria a unidade **e** o acesso da recepção de uma vez |
 | `/admin/unidades/<slug>` | Gerencia a unidade: dados e horário de funcionamento, status, recepção (convidar, trocar senha, ativar/desativar vínculo) e link para a área da unidade |
 
@@ -51,7 +52,7 @@ Ordem das operações (`createUnitAction`):
 
 | Caminho | Papel |
 |---|---|
-| `src/app/admin/{layout,page}.tsx`, `unidades/` | páginas do painel |
+| `src/app/admin/{layout,page}.tsx`, `unidades/`, `comissoes/` | páginas do painel e o editor da tabela de comissões |
 | `src/app/admin/actions.ts` | `createUnitAction`, `updateUnitAction`, `toggleUnitActiveAction`, `inviteReceptionAction`, `changeReceptionPasswordAction`, `toggleMemberActiveAction` |
 | `src/lib/admin/{units,reception,state}.ts` | consultas, provisionamento da recepção (`service_role`) e estado dos formulários |
 | `src/lib/validation/unit.ts` | slug, dados da unidade, senha e horário de funcionamento |

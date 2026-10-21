@@ -1,6 +1,58 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { getBarber, listBarbers } from "@/lib/barbers/queries";
+import {
+  servicesCommissionCents,
+  servicesPctFor,
+  type CommissionBracket,
+} from "./brackets";
+
+/** Tabela progressiva vigente (rede), da menor para a maior faixa. */
+export async function listCommissionBrackets(): Promise<CommissionBracket[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("commission_brackets")
+    .select("min_cents, max_cents, pct")
+    .order("min_cents", { ascending: true })
+    .returns<{ min_cents: number; max_cents: number | null; pct: number | string }[]>();
+  if (error) {
+    console.error("[comissoes] brackets:", error.code);
+    return [];
+  }
+  return (data ?? []).map((r) => ({ minCents: r.min_cents, maxCents: r.max_cents, pct: Number(r.pct) }));
+}
+
+const TZ = "America/Sao_Paulo";
+
+/**
+ * Fatia [fromISO, toISO) pelos meses de São Paulo: a faixa de cada barbeiro é
+ * definida pelo faturamento de serviços DELE EM CADA MÊS, então o cálculo é
+ * feito mês a mês (o período da tela pode cruzar meses).
+ */
+function monthSlices(fromISO: string, toISO: string): { from: string; to: string }[] {
+  const start = fromISO.slice(0, 10);
+  const end = toISO.slice(0, 10);
+  const slices: { from: string; to: string }[] = [];
+  let cur = start;
+  while (cur < end) {
+    const [y, m] = cur.split("-").map(Number);
+    const nextMonth = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+    const sliceEnd = nextMonth < end ? nextMonth : end;
+    slices.push({ from: `${cur}T00:00:00-03:00`, to: `${sliceEnd}T00:00:00-03:00` });
+    cur = sliceEnd;
+  }
+  return slices;
+}
+
+const spMonthKey = (iso: string) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(iso)).slice(0, 7);
+
+const monthLabelOf = (key: string) => {
+  const label = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: TZ }).format(
+    new Date(`${key}-02T12:00:00`),
+  );
+  return label.charAt(0).toUpperCase() + label.slice(1);
+};
 
 export type CommissionRow = {
   barberId: string;
@@ -34,40 +86,93 @@ type SummaryRpcRow = {
 
 const pctOf = (cents: number, pct: number) => Math.round((cents * pct) / 100);
 
-/** Resumo de comissões de todos os barbeiros da unidade no período [from, to). */
+type BarberAccum = {
+  servicesCents: number;
+  productsCents: number;
+  tipsCents: number;
+  ticketsCount: number;
+  appointmentsDone: number;
+  commissionServicesCents: number;
+};
+
+/**
+ * Resumo de comissões de todos os barbeiros da unidade no período [from, to).
+ * Serviços: tabela progressiva aplicada mês a mês sobre o faturamento de
+ * serviços do barbeiro naquele mês. Produtos: % próprio do cadastro.
+ */
 export async function listCommissionSummary(unitId: string, from: string, to: string): Promise<CommissionRow[]> {
   const supabase = await createClient();
-  const [barbers, rpc] = await Promise.all([
+  const slices = monthSlices(from, to);
+  const [barbers, brackets, sliceResults] = await Promise.all([
     listBarbers(unitId),
-    supabase.rpc("commission_summary", { p_unit: unitId, p_from: from, p_to: to }),
+    listCommissionBrackets(),
+    Promise.all(slices.map((s) => supabase.rpc("commission_summary", { p_unit: unitId, p_from: s.from, p_to: s.to }))),
   ]);
-  if (rpc.error) console.error("[comissoes] summary:", rpc.error.code);
-  const byBarber = new Map<string, SummaryRpcRow>(
-    ((rpc.data ?? []) as SummaryRpcRow[]).map((r) => [r.barber_id, r]),
-  );
+
+  const acc = new Map<string, BarberAccum>();
+  const blank = (): BarberAccum => ({
+    servicesCents: 0,
+    productsCents: 0,
+    tipsCents: 0,
+    ticketsCount: 0,
+    appointmentsDone: 0,
+    commissionServicesCents: 0,
+  });
+  for (const res of sliceResults) {
+    if (res.error) console.error("[comissoes] summary:", res.error.code);
+    for (const r of (res.data ?? []) as SummaryRpcRow[]) {
+      const a = acc.get(r.barber_id) ?? blank();
+      const sliceServices = Number(r.services_cents ?? 0);
+      a.servicesCents += sliceServices;
+      a.productsCents += Number(r.products_cents ?? 0);
+      a.tipsCents += Number(r.tips_cents ?? 0);
+      a.ticketsCount += Number(r.tickets_count ?? 0);
+      a.appointmentsDone += Number(r.appointments_done ?? 0);
+      acc.set(r.barber_id, a);
+    }
+  }
+  // A comissão de serviços de cada mês usa a faixa daquele mês (2ª passada,
+  // porque a faixa depende do total do mês de cada barbeiro).
+  for (const res of sliceResults) {
+    for (const r of (res.data ?? []) as SummaryRpcRow[]) {
+      const a = acc.get(r.barber_id);
+      if (!a) continue;
+      const barber = barbers.find((b) => b.id === r.barber_id);
+      a.commissionServicesCents += servicesCommissionCents(
+        brackets,
+        Number(r.services_cents ?? 0),
+        Number(barber?.commission_services_pct ?? 0),
+      );
+    }
+  }
 
   const rows: CommissionRow[] = barbers.map((b) => {
-    const s = byBarber.get(b.id);
-    const servicesCents = Number(s?.services_cents ?? 0);
-    const productsCents = Number(s?.products_cents ?? 0);
-    const commissionServicesCents = pctOf(servicesCents, Number(b.commission_services_pct));
+    const s = acc.get(b.id);
+    const servicesCents = s?.servicesCents ?? 0;
+    const productsCents = s?.productsCents ?? 0;
+    const commissionServices = s?.commissionServicesCents ?? 0;
     const commissionProductsCents = pctOf(productsCents, Number(b.commission_products_pct));
-    const tipsCents = Number(s?.tips_cents ?? 0);
-    const commissionCents = commissionServicesCents + commissionProductsCents;
+    const tipsCents = s?.tipsCents ?? 0;
+    const commissionCents = commissionServices + commissionProductsCents;
+    // % efetivo do período (para exibição): comissão ÷ faturamento de serviços.
+    const effectivePct =
+      servicesCents > 0
+        ? Math.round((commissionServices / servicesCents) * 10_000) / 100
+        : servicesPctFor(brackets, 0, Number(b.commission_services_pct));
     return {
       barberId: b.id,
       name: b.display_name,
       jobTitle: b.job_title,
       isActive: b.is_active,
-      pctServices: Number(b.commission_services_pct),
+      pctServices: effectivePct,
       pctProducts: Number(b.commission_products_pct),
       servicesCents,
       productsCents,
-      commissionServicesCents,
+      commissionServicesCents: commissionServices,
       commissionProductsCents,
       tipsCents,
-      ticketsCount: Number(s?.tickets_count ?? 0),
-      appointmentsDone: Number(s?.appointments_done ?? 0),
+      ticketsCount: s?.ticketsCount ?? 0,
+      appointmentsDone: s?.appointmentsDone ?? 0,
       commissionCents,
       totalCents: commissionCents + tipsCents,
       productionCents: servicesCents + productsCents,
@@ -90,15 +195,31 @@ export type BarberTicket = {
 };
 export type BarberTopItem = { name: string; kind: string; count: number; totalCents: number };
 
+export type BarberMonthRow = {
+  /** "2026-10" */
+  key: string;
+  label: string;
+  servicesCents: number;
+  /** % da faixa daquele mês. */
+  pct: number;
+  commissionCents: number;
+};
+
 export type BarberCommissionDetail = {
-  barber: { id: string; name: string; fullName: string; jobTitle: string; isActive: boolean; phone: string | null; pctServices: number; pctProducts: number };
+  barber: { id: string; name: string; fullName: string; jobTitle: string; isActive: boolean; phone: string | null; pctProducts: number };
   tickets: BarberTicket[];
   topItems: BarberTopItem[];
   servicesCents: number;
   productsCents: number;
+  servicesCommissionCents: number;
+  productsCommissionCents: number;
   commissionCents: number;
   tipsCents: number;
   appointmentsDone: number;
+  /** Quebra por mês (a faixa é mensal). */
+  months: BarberMonthRow[];
+  /** Faixa de percentuais da tabela, ex.: "25% a 35%"; null sem tabela (vale o % do cadastro). */
+  bracketRange: string | null;
 };
 
 /** Detalhe de um barbeiro no período: comandas em que ele vendeu, itens em destaque e totais. */
@@ -111,10 +232,10 @@ export async function getBarberCommissionDetail(
   const barber = await getBarber(unitId, barberId);
   if (!barber) return null;
   const supabase = await createClient();
-  const pctS = Number(barber.commission_services_pct);
+  const pctFallback = Number(barber.commission_services_pct);
   const pctP = Number(barber.commission_products_pct);
 
-  const [ticketsRes, tipsRes, apptRes] = await Promise.all([
+  const [ticketsRes, tipsRes, apptRes, brackets] = await Promise.all([
     supabase
       .from("tickets")
       .select(
@@ -123,6 +244,7 @@ export async function getBarberCommissionDetail(
       .eq("unit_id", unitId)
       .eq("status", "fechada")
       .eq("ticket_items.barber_id", barberId)
+      .in("ticket_items.kind", ["servico", "produto"])
       .gte("closed_at", from)
       .lt("closed_at", to)
       .order("closed_at", { ascending: false })
@@ -149,6 +271,7 @@ export async function getBarberCommissionDetail(
       .eq("status", "concluido")
       .gte("starts_at", from)
       .lt("starts_at", to),
+    listCommissionBrackets(),
   ]);
   if (ticketsRes.error) console.error("[comissoes] detail tickets:", ticketsRes.error.code);
 
@@ -161,6 +284,20 @@ export async function getBarberCommissionDetail(
     tipByTicket.set(t.ticket_id, (tipByTicket.get(t.ticket_id) ?? 0) + t.amount_cents);
   }
 
+  // 1ª passada: faturamento de serviços por mês (a faixa depende do mês).
+  const monthServices = new Map<string, number>();
+  for (const t of ticketsRes.data ?? []) {
+    const s = t.ticket_items.reduce(
+      (n, i) => n + (i.kind === "servico" ? i.quantity * i.unit_price_cents : 0),
+      0,
+    );
+    const key = spMonthKey(t.closed_at);
+    monthServices.set(key, (monthServices.get(key) ?? 0) + s);
+  }
+  const pctByMonth = new Map(
+    [...monthServices.entries()].map(([key, total]) => [key, servicesPctFor(brackets, total, pctFallback)]),
+  );
+
   let servicesCents = 0;
   let productsCents = 0;
   const top = new Map<string, BarberTopItem>();
@@ -169,8 +306,11 @@ export async function getBarberCommissionDetail(
     let p = 0;
     const items: BarberTicketLine[] = t.ticket_items.map((i) => {
       const total = i.quantity * i.unit_price_cents;
+      // Item "pacote" é a VENDA do pacote: não é produção de ninguém. Comissão
+      // só nasce quando o cliente USA cada serviço (item servico pelo pacote).
       if (i.kind === "produto") p += total;
-      else s += total;
+      else if (i.kind === "servico") s += total;
+      if (i.kind === "pacote") return { name: i.name, kind: i.kind, quantity: i.quantity, totalCents: 0 };
       const key = `${i.kind}:${i.name}`;
       const cur = top.get(key) ?? { name: i.name, kind: i.kind, count: 0, totalCents: 0 };
       cur.count += i.quantity;
@@ -180,6 +320,7 @@ export async function getBarberCommissionDetail(
     });
     servicesCents += s;
     productsCents += p;
+    const monthPct = pctByMonth.get(spMonthKey(t.closed_at)) ?? pctFallback;
     return {
       id: t.id,
       customerName: t.customer_name,
@@ -187,12 +328,23 @@ export async function getBarberCommissionDetail(
       items,
       servicesCents: s,
       productsCents: p,
-      commissionCents: pctOf(s, pctS) + pctOf(p, pctP),
+      commissionCents: pctOf(s, monthPct) + pctOf(p, pctP),
       tipCents: tipByTicket.get(t.id) ?? 0,
     };
   });
 
-  const commissionCents = pctOf(servicesCents, pctS) + pctOf(productsCents, pctP);
+  const months: BarberMonthRow[] = [...monthServices.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, total]) => ({
+      key,
+      label: monthLabelOf(key),
+      servicesCents: total,
+      pct: pctByMonth.get(key) ?? pctFallback,
+      commissionCents: servicesCommissionCents(brackets, total, pctFallback),
+    }));
+  const servicesCommission = months.reduce((a, m) => a + m.commissionCents, 0);
+  const productsCommission = pctOf(productsCents, pctP);
+  const pctValues = brackets.map((b) => b.pct);
   const tipsCents = tickets.reduce((a, t) => a + t.tipCents, 0);
   return {
     barber: {
@@ -202,15 +354,20 @@ export async function getBarberCommissionDetail(
       jobTitle: barber.job_title,
       isActive: barber.is_active,
       phone: barber.phone,
-      pctServices: pctS,
       pctProducts: pctP,
     },
     tickets,
     topItems: [...top.values()].sort((a, b) => b.totalCents - a.totalCents).slice(0, 8),
     servicesCents,
     productsCents,
-    commissionCents,
+    servicesCommissionCents: servicesCommission,
+    productsCommissionCents: productsCommission,
+    commissionCents: servicesCommission + productsCommission,
     tipsCents,
     appointmentsDone: apptRes.count ?? 0,
+    months,
+    bracketRange: pctValues.length
+      ? `${String(Math.min(...pctValues)).replace(".", ",")}% a ${String(Math.max(...pctValues)).replace(".", ",")}%`
+      : null,
   };
 }

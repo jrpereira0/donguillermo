@@ -59,7 +59,6 @@ const detailsFrom = (form: FormData) => ({
   instagram: str(form, "instagram"),
   facebook: str(form, "facebook"),
   tiktok: str(form, "tiktok"),
-  commissionServices: str(form, "commissionServices"),
   commissionProducts: str(form, "commissionProducts"),
 });
 
@@ -126,7 +125,8 @@ export async function createBarberAction(
     },
     photoPath: photoPath || null,
     social: buildSocial(v),
-    commissionServices: v.commissionServices,
+    // Coluna legada: só serve de reserva se a tabela progressiva ficar vazia.
+    commissionServices: 25,
     commissionProducts: v.commissionProducts,
     workHours: hours.value ?? {},
   });
@@ -210,7 +210,6 @@ export async function updateBarberAction(
       state: v.state,
       photo_path: photoPath || null,
       social: buildSocial(v),
-      commission_services_pct: v.commissionServices,
       commission_products_pct: v.commissionProducts,
       work_hours: hours.value ?? {},
     })

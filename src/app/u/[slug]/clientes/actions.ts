@@ -19,6 +19,26 @@ const UNIQUE_VIOLATION = "23505";
 const GENERIC = "Não foi possível concluir a operação. Tente novamente.";
 const CHECK = "Confira os campos destacados.";
 const DUPLICATE_CPF = "Já existe um cliente com este CPF.";
+const DUPLICATE_PHONE = "Já existe um cliente com este telefone.";
+
+/** Traduz a violação de unicidade (23505) para o campo certo (telefone ou CPF). */
+function duplicateField(error: { code?: string; message?: string; details?: string } | null): "cpf" | "phone" | null {
+  if (!error || error.code !== UNIQUE_VIOLATION) return null;
+  const text = `${error.message ?? ""} ${error.details ?? ""}`;
+  if (text.includes("phone")) return "phone";
+  if (text.includes("cpf")) return "cpf";
+  return null;
+}
+
+type SupabaseLike = Awaited<ReturnType<typeof createClient>>;
+
+/** Telefone é único na rede: devolve o cliente que já usa este telefone (se houver). */
+async function customerWithPhone(supabase: SupabaseLike, phone: string, exceptId?: string) {
+  let query = supabase.from("customers").select("id, full_name").eq("phone", phone);
+  if (exceptId) query = query.neq("id", exceptId);
+  const { data } = await query.maybeSingle<{ id: string; full_name: string }>();
+  return data;
+}
 
 function str(form: FormData, key: string) {
   const v = form.get(key);
@@ -100,6 +120,17 @@ export async function createCustomerAction(
   const v = parsed.data;
 
   const supabase = await createClient();
+  if (v.phone) {
+    const existing = await customerWithPhone(supabase, v.phone);
+    if (existing) {
+      return {
+        status: "error",
+        message: CHECK,
+        values,
+        fieldErrors: { phone: `${DUPLICATE_PHONE} Cadastro existente: ${existing.full_name}.` },
+      };
+    }
+  }
   const { error } = await supabase.from("customers").insert({
     id,
     created_unit_id: unit.id,
@@ -108,9 +139,9 @@ export async function createCustomerAction(
     ...columnsFrom(v),
   });
   if (error) {
-    if (error.code === UNIQUE_VIOLATION) {
-      return { status: "error", message: CHECK, values, fieldErrors: { cpf: DUPLICATE_CPF } };
-    }
+    const dup = duplicateField(error);
+    if (dup === "phone") return { status: "error", message: CHECK, values, fieldErrors: { phone: DUPLICATE_PHONE } };
+    if (dup === "cpf") return { status: "error", message: CHECK, values, fieldErrors: { cpf: DUPLICATE_CPF } };
     console.error("[customers] insert:", error.code);
     return { status: "error", message: GENERIC, values };
   }
@@ -158,6 +189,18 @@ export async function updateCustomerAction(
       ? current.consent_at
       : new Date().toISOString();
 
+  if (v.phone) {
+    const existing = await customerWithPhone(supabase, v.phone, customerId);
+    if (existing) {
+      return {
+        status: "error",
+        message: CHECK,
+        values,
+        fieldErrors: { phone: `${DUPLICATE_PHONE} Cadastro existente: ${existing.full_name}.` },
+      };
+    }
+  }
+
   const { data, error } = await supabase
     .from("customers")
     .update({ photo_path: photoPath || null, consent_at: consentAt, ...columnsFrom(v) })
@@ -165,9 +208,9 @@ export async function updateCustomerAction(
     .select("id");
 
   if (error || !data?.length) {
-    if (error?.code === UNIQUE_VIOLATION) {
-      return { status: "error", message: CHECK, values, fieldErrors: { cpf: DUPLICATE_CPF } };
-    }
+    const dup = duplicateField(error);
+    if (dup === "phone") return { status: "error", message: CHECK, values, fieldErrors: { phone: DUPLICATE_PHONE } };
+    if (dup === "cpf") return { status: "error", message: CHECK, values, fieldErrors: { cpf: DUPLICATE_CPF } };
     console.error("[customers] update:", error?.code);
     return { status: "error", message: error ? GENERIC : "Cliente não encontrado.", values };
   }

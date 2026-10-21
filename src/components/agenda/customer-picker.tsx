@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Loader2, Phone, Search, UserPlus, UserRound, X } from "lucide-react";
+import { Layers, Loader2, Phone, Search, UserPlus, UserRound, X } from "lucide-react";
 import { quickCreateCustomerAction, searchCustomersAction } from "@/app/u/[slug]/agenda/actions";
 import { Field } from "@/components/unit/form-parts";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,17 @@ const MODES = [
   { value: "registered", label: "Cliente cadastrado", icon: UserRound },
   { value: "walkin", label: "Sem cadastro", icon: UserPlus },
 ] as const;
+
+/** Resumo dos pacotes utilizáveis do cliente (selo na busca e no selecionado). */
+export function customerPackageInfo(hit: AgendaCustomerHit | null | undefined) {
+  const packages = hit?.packages ?? [];
+  if (!packages.length) return null;
+  const remaining = packages.reduce(
+    (n, p) => n + p.items.reduce((s, i) => s + i.remaining, 0),
+    0,
+  );
+  return { packages, remaining, names: packages.map((p) => p.name).join(", ") };
+}
 
 /**
  * Escolha do cliente do agendamento: busca na rede, cadastra rápido no próprio modal
@@ -73,6 +84,7 @@ export function CustomerPicker({ slug, value, onChange, errors, disabled }: Prop
   }, [query, slug]);
 
   const set = (patch: Partial<CustomerChoice>) => onChange({ ...value, ...patch });
+  const selectedPackageInfo = customerPackageInfo(value.selected);
 
   function openCreate() {
     setCreating(true);
@@ -150,11 +162,25 @@ export function CustomerPicker({ slug, value, onChange, errors, disabled }: Prop
                 <UserRound className="size-4" aria-hidden="true" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{value.selected.name}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-medium">{value.selected.name}</span>
+                  {selectedPackageInfo ? (
+                    <span className="flex shrink-0 items-center gap-1 rounded-full bg-gold/15 px-1.5 py-0.5 text-[0.6rem] font-semibold tracking-wide text-gold uppercase">
+                      <Layers className="size-3" aria-hidden="true" />
+                      Tem pacote
+                    </span>
+                  ) : null}
+                </span>
                 {value.selected.phone ? (
                   <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Phone className="size-3 text-gold/80" aria-hidden="true" />
                     {maskPhone(value.selected.phone)}
+                  </span>
+                ) : null}
+                {selectedPackageInfo ? (
+                  <span className="mt-0.5 block truncate text-xs font-medium text-gold">
+                    {selectedPackageInfo.names} · {selectedPackageInfo.remaining}{" "}
+                    {selectedPackageInfo.remaining === 1 ? "serviço restante" : "serviços restantes"}
                   </span>
                 ) : null}
               </span>
@@ -233,9 +259,7 @@ export function CustomerPicker({ slug, value, onChange, errors, disabled }: Prop
                   aria-invalid={createErrors.phone ? true : undefined}
                 />
               </Field>
-              {createMessage && !createErrors.firstName && !createErrors.lastName && !createErrors.phone ? (
-                <p className="text-xs text-destructive">{createMessage}</p>
-              ) : null}
+              {createMessage ? <p className="text-xs text-destructive">{createMessage}</p> : null}
               <Button type="button" variant="luxe" size="sm" disabled={pending || disabled} onClick={submitCreate} className="h-10">
                 {pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
                 Cadastrar e usar
@@ -264,19 +288,38 @@ export function CustomerPicker({ slug, value, onChange, errors, disabled }: Prop
 
               {hits.length > 0 ? (
                 <ul className="scroll-luxe flex max-h-56 flex-col overflow-y-auto rounded-xl border border-border bg-[#0b0b0b]/60 p-1" aria-label="Clientes encontrados">
-                  {hits.map((h) => (
-                    <li key={h.id}>
-                      <button
-                        type="button"
-                        onClick={() => set({ selected: h })}
-                        className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-gold/10"
-                      >
-                        <UserRound className="size-4 shrink-0 text-gold/80" aria-hidden="true" />
-                        <span className="min-w-0 flex-1 truncate">{h.name}</span>
-                        {h.phone ? <span className="shrink-0 text-xs text-muted-foreground">{maskPhone(h.phone)}</span> : null}
-                      </button>
-                    </li>
-                  ))}
+                  {hits.map((h) => {
+                    const info = customerPackageInfo(h);
+                    return (
+                      <li key={h.id}>
+                        <button
+                          type="button"
+                          onClick={() => set({ selected: h })}
+                          className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-gold/10"
+                        >
+                          <UserRound className="size-4 shrink-0 text-gold/80" aria-hidden="true" />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className="truncate">{h.name}</span>
+                              {info ? (
+                                <span className="flex shrink-0 items-center gap-1 rounded-full bg-gold/15 px-1.5 py-0.5 text-[0.6rem] font-semibold tracking-wide text-gold uppercase">
+                                  <Layers className="size-3" aria-hidden="true" />
+                                  Tem pacote
+                                </span>
+                              ) : null}
+                            </span>
+                            {info ? (
+                              <span className="mt-0.5 block truncate text-[0.68rem] font-medium text-gold">
+                                {info.names} · {info.remaining}{" "}
+                                {info.remaining === 1 ? "restante" : "restantes"}
+                              </span>
+                            ) : null}
+                          </span>
+                          {h.phone ? <span className="shrink-0 text-xs text-muted-foreground">{maskPhone(h.phone)}</span> : null}
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : searched && !loading ? (
                 <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border px-3.5 py-3.5">

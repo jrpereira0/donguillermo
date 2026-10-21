@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   AtSign,
   History,
   IdCard,
+  Layers,
   Loader2,
   MapPin,
   Megaphone,
@@ -75,7 +76,7 @@ export const EMPTY_CUSTOMER: CustomerDefaults = {
   photoUrl: null,
 };
 
-type TabId = "dados" | "observacoes" | "historico" | "situacao";
+type TabId = "dados" | "observacoes" | "pacotes" | "historico" | "situacao";
 
 const CREATE_TABS: TabDef<TabId>[] = [
   { id: "dados", label: "Dados pessoais", icon: UserRound },
@@ -83,6 +84,7 @@ const CREATE_TABS: TabDef<TabId>[] = [
 const EDIT_TABS: TabDef<TabId>[] = [
   ...CREATE_TABS,
   { id: "observacoes", label: "Observações", icon: NotebookPen },
+  { id: "pacotes", label: "Pacotes", icon: Layers },
   { id: "historico", label: "Histórico", icon: History },
   { id: "situacao", label: "Situação", icon: Settings2 },
 ];
@@ -122,11 +124,13 @@ type Props = {
   editNotes?: React.ReactNode;
   /** Edição: conteúdo da aba "Histórico" (renderizado no servidor). */
   editHistory?: React.ReactNode;
+  /** Edição: conteúdo da aba "Pacotes" (renderizado no servidor). */
+  editPackages?: React.ReactNode;
   /** Edição: conteúdo da aba "Situação" (renderizado no servidor). */
   editStatus?: React.ReactNode;
 };
 
-export function CustomerForm({ slug, customerId, defaults, mode, editNotes, editHistory, editStatus }: Props) {
+export function CustomerForm({ slug, customerId, defaults, mode, editNotes, editHistory, editPackages, editStatus }: Props) {
   const editing = mode === "edit";
   const [state, formAction, pending] = useActionState(
     editing ? updateCustomerAction.bind(null, slug, customerId) : createCustomerAction.bind(null, slug),
@@ -138,6 +142,23 @@ export function CustomerForm({ slug, customerId, defaults, mode, editNotes, edit
   const tabs = editing ? EDIT_TABS : CREATE_TABS;
 
   const fe = state.fieldErrors ?? {};
+
+  // Com erro ao salvar, a tela vai até o primeiro campo errado e foca nele
+  // (na ordem visual do formulário), em vez de deixar a recepção procurando.
+  useEffect(() => {
+    if (state.status !== "error") return;
+    const ids = ["fullName", "phone", "email", "birthDate", "cpf", "cep", "street", "streetNumber", "complement", "neighborhood", "city", "state"];
+    const firstId = ids.find((id) => fe[id as keyof typeof fe]);
+    if (!firstId) return;
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(firstId);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
   // Depois de um erro o React 19 limpa campos não controlados: devolvemos o que foi digitado.
   const val = (k: keyof CustomerDefaults) => state.values?.[k] ?? String(defaults[k] ?? "");
   const base = `/u/${slug}/clientes`;
@@ -412,6 +433,9 @@ export function CustomerForm({ slug, customerId, defaults, mode, editNotes, edit
         <>
           <div role="tabpanel" id="customer-panel-observacoes" aria-labelledby="customer-tab-observacoes" hidden={tab !== "observacoes"} className="flex flex-col gap-5">
             {editNotes}
+          </div>
+          <div role="tabpanel" id="customer-panel-pacotes" aria-labelledby="customer-tab-pacotes" hidden={tab !== "pacotes"} className="flex flex-col gap-5">
+            {editPackages}
           </div>
           <div role="tabpanel" id="customer-panel-historico" aria-labelledby="customer-tab-historico" hidden={tab !== "historico"} className="flex flex-col gap-5">
             {editHistory}

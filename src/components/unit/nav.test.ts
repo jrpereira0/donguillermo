@@ -10,7 +10,7 @@ const barbA: Membership = { role: "barbeiro", unit: A };
 const labels = (m: Membership[], slug: string) => navItemsFor(m, slug).map((i) => i.label);
 
 describe("navItemsFor", () => {
-  it("recepção vê as 8 áreas da recepção, na ordem do dia a dia", () => {
+  it("recepção vê as 9 áreas da recepção, na ordem do dia a dia", () => {
     expect(labels([recepA], "un-a")).toEqual([
       "Agenda",
       "Caixa",
@@ -19,11 +19,12 @@ describe("navItemsFor", () => {
       "Profissionais",
       "Serviços",
       "Produtos",
+      "Pacotes",
       "Configurações",
     ]);
   });
   it("admin da rede vê o mesmo menu em qualquer unidade (sem Minha agenda)", () => {
-    expect(labels([admin], "qualquer")).toHaveLength(8);
+    expect(labels([admin], "qualquer")).toHaveLength(9);
     expect(labels([admin], "qualquer")).not.toContain("Minha agenda");
   });
   it("barbeiro vê só Minha agenda", () => {
@@ -44,6 +45,7 @@ describe("navItemsFor", () => {
       "Operação",
       "Cadastros",
       "Cadastros",
+      "Catálogo",
       "Catálogo",
       "Catálogo",
       "Unidade",

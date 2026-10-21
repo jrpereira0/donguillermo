@@ -119,13 +119,16 @@ export function DialogBody({
   children,
   className,
   scroll = true,
+  ref,
 }: {
   children: React.ReactNode;
   className?: string;
   scroll?: boolean;
+  ref?: React.Ref<HTMLDivElement>;
 }) {
   return (
     <div
+      ref={ref}
       className={cn(
         "min-h-0 flex-1 px-5 py-5 sm:px-6 sm:py-6",
         scroll && "overflow-y-auto overscroll-contain",

@@ -1,6 +1,6 @@
 # Modelo de dados
 
-Escopo atual: rede, acesso e papéis (Etapa 2) e os cadastros da recepção: profissionais, serviços e clientes. Agenda, comandas, produtos e caixa entram nas fases seguintes.
+Escopo atual: rede, acesso, cadastros (profissionais, serviços, produtos, pacotes, clientes) e a operação (agenda, comandas, caixa e comissões). O diagrama abaixo cobre a base; as tabelas da operação estão na seção seguinte.
 
 ```mermaid
 erDiagram
@@ -32,7 +32,6 @@ erDiagram
     uuid id PK,FK "= auth.users.id"
     text email
     text full_name
-    text phone
     boolean is_active
   }
   UNIT_MEMBERS {
@@ -49,8 +48,8 @@ erDiagram
     text full_name
     text display_name
     text cnpj "opcional, unico na unidade"
-    numeric commission_services_pct
-    numeric commission_products_pct
+    numeric commission_products_pct "produtos"
+    numeric commission_services_pct "reserva, nao editada"
     jsonb work_hours
     boolean is_active
   }
@@ -109,7 +108,7 @@ Não há `DELETE` para usuários: unidades são desativadas ou marcadas como exc
 
 ### `profiles`
 
-Uma linha por usuário do Supabase Auth, criada automaticamente por trigger (`on_auth_user_created`). O `email` é mantido em sincronia por outro trigger. `is_active = false` bloqueia o usuário em todas as unidades.
+Uma linha por usuário do Supabase Auth, criada automaticamente por trigger (`on_auth_user_created`). O `email` é mantido em sincronia por outro trigger. `is_active = false` bloqueia o usuário em todas as unidades. Não há telefone neste perfil.
 
 ### `unit_members`
 
@@ -126,7 +125,7 @@ Essas duas regras são garantidas por `CHECK` e índice no banco.
 Um registro por profissional **e unidade** (o mesmo barbeiro em duas lojas tem duas linhas). `user_id` é opcional: liga o profissional ao login (papel `barbeiro`). Principais regras:
 
 - Nome completo (2 a 120) e nome de exibição (2 a 40); sobrenome, endereço e CEP opcionais; telefone só com dígitos; CNPJ opcional (14 caracteres, aceita alfanumérico), único na unidade; `job_title` informativo.
-- `commission_services_pct` e `commission_products_pct`: 0 a 100.
+- `commission_products_pct`: 0 a 100, editado na aba Comissões. `commission_services_pct` não aparece no cadastro: a comissão de serviços vem da tabela `commission_brackets`. A coluna só entra se essa tabela estiver vazia.
 - `work_hours`: expediente por dia da semana (jsonb), com intervalo de almoço opcional, sempre dentro do horário da unidade.
 - `photo_path` precisa começar com a pasta da unidade (`<unit_id>/...`).
 - `UPDATE` só nas colunas listadas na migration (privilégio por coluna); não há `DELETE`: o profissional é desativado.
@@ -146,19 +145,34 @@ Quem faz cada serviço. A **mesma unidade** é garantida por chave estrangeira c
 Cliente **da rede** (não de uma unidade). Principais regras:
 
 - `created_unit_id` (unidade de origem) e `registered_via` (`recepcao` ou `autocadastro`) são gravados na criação e **imutáveis**.
-- Só nome (2 a 120) e telefone (DDD + 8 ou 9 dígitos, só dígitos) são obrigatórios; telefone pode repetir. CPF opcional, 11 dígitos, **único na rede** (índice parcial).
+- Só nome (2 a 120) e telefone (DDD + 8 ou 9 dígitos, só dígitos) são obrigatórios. Telefone e CPF são **únicos na rede** (índices parciais; telefone só quando preenchido).
 - `search_name`: coluna gerada (minúsculas e sem acento) usada na busca da lista.
 - `referral_source`: como conheceu (`indicacao`, `instagram`, `facebook`, `google`, `passou_em_frente`, `outro`).
 - `marketing_consent` e `consent_at`: consentimento de comunicação (LGPD).
 - `photo_path`: `<uuid>.(webp|jpg|png)`, sem pastas.
-- `preferred_barber_id`: coluna existente, **sem uso** na interface por enquanto.
-- Sem `DELETE`: o cliente é desativado (`is_active`).
+- Sem `DELETE`: o cliente é desativado (`is_active`). A coluna `preferred_barber_id` foi removida (não havia tela). `profiles.phone` também: o telefone fica no profissional, no cliente ou na unidade.
 
 Detalhes em [clientes.md](clientes.md).
 
 ### `customer_notes`
 
 Observações da recepção sobre o cliente (várias por cliente). `body` de 1 a 1000 caracteres. `created_by` e `author_name` são preenchidos por gatilho a partir da sessão (não são enviados pelo cliente); `unit_id` é a unidade onde foi escrita (vira `NULL` se a unidade for removida); excluir o cliente apaga as observações em cascata. Só `body` pode ser editado.
+
+## Operação (agenda, caixa, pacotes, comissões)
+
+Todas filtradas por `unit_id`, exceto a tabela de comissão, que é da rede. Dinheiro sempre em centavos. Não há exclusão física de comanda nem de caixa: cancelam ou fecham.
+
+| Tabela | Para que serve |
+|---|---|
+| `appointments`, `appointment_services` | Agenda. Um agendamento pode ter serviços e filhos (encaixe). A recepção pode encaixar. O booking público do cliente ainda não existe; quando existir, `appointmentSlotTaken` (`src/lib/agenda/conflicts.ts`) barra horário ocupado antes de gravar |
+| `products` | Catálogo de produtos da unidade |
+| `packages`, `package_items` | Modelo de pacote (serviços + desconto % + validade) |
+| `customer_packages`, `customer_package_items` | Pacote vendido ao cliente (foto da venda). Ativa ao cobrar a comanda; o saldo é o que sobra dos itens, não um contador |
+| `cash_registers`, `cash_movements`, `cash_register_events` | Um caixa por dia. Sangria não passa do dinheiro da gaveta. O fechamento só exige comandas abertas **daquele dia** |
+| `tickets`, `ticket_items`, `ticket_payments`, `ticket_tips` | Comanda. Serviço exige profissional (senão a comissão se perde). A venda do pacote não tem profissional; o uso de cada serviço tem. A comanda só fecha no caixa do dia em que foi aberta |
+| `commission_brackets` | Faixas da comissão de serviços (admin da rede). O % da faixa do faturamento mensal de serviços vale sobre o mês inteiro. Produtos usam o % do profissional |
+
+Funções principais dessa parte: `save_appointment`, `open_ticket_from_appointment`, `save_open_ticket`, `charge_ticket`, `replace_ticket_items`, `close_cash_register`, `reopen_cash_register`, `reopen_ticket`, `commission_summary`.
 
 ## Funções de autorização (SQL)
 
@@ -200,5 +214,6 @@ Outras funções do banco:
 | `20261014001300_barber_service_duration.sql` | Duração própria do profissional em cada serviço (`NULL` = padrão) |
 | `20261014001400_customers.sql` | Funções `is_any_reception` e `network_units`, tabela `customers`, RLS e bucket `customer-photos` |
 | `20261014001500_customer_notes.sql` | Tabela `customer_notes` com gatilho de autoria e RLS; migra e remove `customers.notes` |
+| `20261014001600` em diante | Configuração da unidade, agenda, caixa, produtos, pacotes, comissões e as correções posteriores (telefone único, sangria, comissão progressiva, colunas sem uso). A lista completa é a pasta `supabase/migrations/` |
 
-Os arquivos seguem o padrão da Supabase CLI (`supabase/migrations/AAAAMMDDHHMMSS_nome.sql`).
+Os arquivos seguem o padrão da Supabase CLI (`supabase/migrations/AAAAMMDDHHMMSS_nome.sql`). Aplicação: `npm run db:migrate`.

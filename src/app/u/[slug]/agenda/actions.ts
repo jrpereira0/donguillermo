@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { fromMinutes, outsideHoursReason, toMinutes, utcToZoned, zonedToUtc } from "@/lib/agenda/time";
-import type { AgendaCustomerHit, AgendaFormState } from "@/lib/agenda/types";
+import type { AgendaCustomerHit, AgendaCustomerPackage, AgendaFormState } from "@/lib/agenda/types";
 import { collectValues } from "@/lib/barbers/form";
 import { searchFilter } from "@/lib/customers/queries";
+import { listUsablePackagesForCustomers } from "@/lib/packages/queries";
 import { formatRetry, rateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { getUnitSettings } from "@/lib/units/queries";
@@ -398,6 +399,22 @@ export async function setAppointmentStatusAction(slug: string, id: string, to: s
   if (!current) return fail("Agendamento não encontrado.");
   if (!canMove(current.status, to)) return fail("Esta mudança de situação não é permitida.");
 
+  // Concluir é pela comanda: receber a comanda já marca concluído sozinho.
+  // Concluir na mão deixaria o atendimento fora do histórico do cliente e
+  // contando em Comissões com produção R$ 0.
+  if (to === "concluido") {
+    const { data: charged } = await supabase
+      .from("tickets")
+      .select("id")
+      .eq("unit_id", unit.id)
+      .eq("appointment_id", id)
+      .eq("status", "fechada")
+      .limit(1);
+    if (!charged?.length) {
+      return fail("Para concluir, receba a comanda deste agendamento (botão Cobrar). Sem cobrança, ele não entra no histórico nem nas comissões.");
+    }
+  }
+
   const { data, error } = await supabase
     .from("appointments")
     .update({ status: to })
@@ -511,7 +528,7 @@ export async function deleteBlockAction(slug: string, id: string): Promise<Agend
 
 /** Busca clientes da rede (nome, telefone, CPF ou e-mail) para o agendamento. */
 export async function searchCustomersAction(slug: string, q: string): Promise<AgendaCustomerHit[]> {
-  const { ctx } = await requireUnitArea(slug, "agenda");
+  const { ctx, unit } = await requireUnitArea(slug, "agenda");
   if (throttled(ctx.userId, "search", 1200)) return [];
   const filter = searchFilter(typeof q === "string" ? q : "");
   if (!filter) return [];
@@ -529,7 +546,31 @@ export async function searchCustomersAction(slug: string, q: string): Promise<Ag
     console.error("[agenda] customer search:", error.code);
     return [];
   }
-  return (data ?? []).map((c) => ({ id: c.id, name: c.full_name, phone: c.phone }));
+  const customers = data ?? [];
+  // Junto do nome já vai o pacote utilizável nesta unidade (selo na busca e
+  // serviços/saldo prontos para o passo de serviços do agendamento).
+  const packagesByCustomer = await listUsablePackagesForCustomers(
+    unit.id,
+    customers.map((c) => c.id),
+  );
+  return customers.map((c) => ({
+    id: c.id,
+    name: c.full_name,
+    phone: c.phone,
+    packages: packagesByCustomer[c.id] ?? [],
+  }));
+}
+
+/** Pacotes utilizáveis de um cliente já selecionado (ex.: ao editar um agendamento). */
+export async function getCustomerPackagesAction(
+  slug: string,
+  customerId: string,
+): Promise<AgendaCustomerPackage[]> {
+  const { ctx, unit } = await requireUnitArea(slug, "agenda");
+  if (throttled(ctx.userId, "search", 1200)) return [];
+  if (!UUID.test(customerId ?? "")) return [];
+  const byCustomer = await listUsablePackagesForCustomers(unit.id, [customerId]);
+  return byCustomer[customerId] ?? [];
 }
 
 export type QuickCustomerResult =
@@ -572,6 +613,22 @@ export async function quickCreateCustomerAction(
   }
 
   const supabase = await createClient();
+  // Telefone é único na rede: se já houver cadastro, a recepção seleciona o
+  // existente na busca em vez de duplicar a pessoa.
+  if (phoneParsed.success) {
+    const { data: existing } = await supabase
+      .from("customers")
+      .select("id, full_name")
+      .eq("phone", phoneParsed.data)
+      .maybeSingle<{ id: string; full_name: string }>();
+    if (existing) {
+      return {
+        ok: false,
+        message: `Já existe um cliente com este telefone: ${existing.full_name}. Selecione-o na busca.`,
+        fieldErrors: { phone: "Telefone já cadastrado." },
+      };
+    }
+  }
   const { data, error } = await supabase
     .from("customers")
     .insert({
@@ -584,10 +641,13 @@ export async function quickCreateCustomerAction(
 
   if (error || !data) {
     console.error("[agenda] quick customer:", error?.code);
+    if (error?.code === "23505") {
+      return { ok: false, message: "Já existe um cliente com este telefone. Selecione-o na busca.", fieldErrors: { phone: "Telefone já cadastrado." } };
+    }
     return { ok: false, message: GENERIC };
   }
 
   revalidatePath(`/u/${unit.slug}/clientes`);
   revalidatePath(`/u/${unit.slug}/agenda`);
-  return { ok: true, customer: { id: data.id, name: data.full_name, phone: data.phone } };
+  return { ok: true, customer: { id: data.id, name: data.full_name, phone: data.phone, packages: [] } };
 }

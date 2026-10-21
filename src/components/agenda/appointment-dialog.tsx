@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   Check,
   ChevronLeft,
   Clock,
+  Layers,
   Loader2,
   Pencil,
+  Plus,
   Receipt,
   RotateCcw,
   Scissors,
@@ -15,7 +17,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
-import { saveAppointmentAction, setAppointmentStatusAction } from "@/app/u/[slug]/agenda/actions";
+import { getCustomerPackagesAction, saveAppointmentAction, setAppointmentStatusAction } from "@/app/u/[slug]/agenda/actions";
 import { FormAlert, FieldError } from "@/components/auth/form-alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -24,7 +26,7 @@ import { Field } from "@/components/unit/form-parts";
 import { BarberAvatar } from "@/components/unit/barber-avatar";
 import { statusBadgeClass } from "@/lib/agenda/status-style";
 import { freeSlots, fromMinutes, longDateLabel, outsideHoursReason, shortDateLabel, toMinutes } from "@/lib/agenda/time";
-import type { AgendaBarber, AgendaEntry, AgendaOffers, AgendaService } from "@/lib/agenda/types";
+import type { AgendaBarber, AgendaCustomerPackage, AgendaEntry, AgendaOffers, AgendaService } from "@/lib/agenda/types";
 import { initialAgendaState } from "@/lib/agenda/types";
 import { maskPhone } from "@/lib/validation/barber";
 import {
@@ -103,6 +105,113 @@ function customerReady(c: CustomerChoice): boolean {
   return !!c.selected?.id;
 }
 
+/** Saldo do pacote por serviço (soma se o mesmo serviço estiver em mais de um pacote). */
+function packageByService(packages: AgendaCustomerPackage[] | undefined) {
+  const map = new Map<string, { packageName: string; remaining: number }>();
+  for (const pkg of packages ?? []) {
+    for (const item of pkg.items) {
+      const cur = map.get(item.serviceId);
+      map.set(item.serviceId, {
+        packageName: cur ? `${cur.packageName}, ${pkg.name}` : pkg.name,
+        remaining: (cur?.remaining ?? 0) + item.remaining,
+      });
+    }
+  }
+  return map;
+}
+
+/** Serviços do pacote do cliente para agendar direto, com o saldo de cada um. */
+function PackageServicesPanel({
+  packages,
+  services,
+  availableIds,
+  picked,
+  onToggle,
+}: {
+  packages: AgendaCustomerPackage[] | undefined;
+  services: AgendaService[];
+  availableIds: Set<string>;
+  picked: string[];
+  onToggle: (id: string) => void;
+}) {
+  if (!packages?.length) return null;
+  const totalRemaining = packages.reduce((n, p) => n + p.items.reduce((s, i) => s + i.remaining, 0), 0);
+  return (
+    <section
+      aria-label="Serviços do pacote do cliente"
+      className="overflow-hidden rounded-xl border border-gold/25 bg-gradient-to-r from-gold/[0.08] via-gold/[0.03] to-transparent"
+    >
+      <div className="flex items-center gap-2 border-b border-gold/15 px-3 py-2">
+        <Layers className="size-4 shrink-0 text-gold" aria-hidden="true" />
+        <p className="min-w-0 flex-1 truncate text-[0.72rem] font-semibold tracking-[0.08em] text-gold uppercase">
+          Serviços do pacote
+        </p>
+        <span className="shrink-0 text-[0.68rem] tabular-nums text-gold/90">
+          {totalRemaining} {totalRemaining === 1 ? "restante" : "restantes"}
+        </span>
+      </div>
+      <div className="divide-y divide-gold/10">
+        {packages.map((pkg) => (
+          <div key={pkg.id} className="px-3 py-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <p className="text-[0.82rem] font-semibold text-cream">{pkg.name}</p>
+              <span className="rounded-full bg-gold/15 px-1.5 py-0.5 text-[0.6rem] font-semibold tracking-wide text-gold uppercase">
+                Pacote ativo
+              </span>
+            </div>
+            <div className="divide-y divide-white/5">
+              {pkg.items.map((item) => {
+                const service = services.find((s) => s.id === item.serviceId);
+                const unavailable = !service || !availableIds.has(item.serviceId);
+                const isPicked = picked.includes(item.serviceId);
+                return (
+                  <div key={`${pkg.id}:${item.serviceId}`} className="flex items-center gap-3 py-1.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[0.8rem] font-medium text-cream">{item.serviceName}</p>
+                      <p className="truncate text-[0.68rem] tabular-nums text-muted-foreground">
+                        restam {item.remaining} de {item.quantityTotal}
+                        {service ? ` · ${formatDuration(service.minutes)} · ${formatBRL(service.priceCents)}` : ""}
+                        {unavailable && service ? " · indisponível para este profissional" : ""}
+                        {!service ? " · fora do catálogo atual" : ""}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="outline"
+                      disabled={unavailable}
+                      onClick={() => onToggle(item.serviceId)}
+                      className={cn(
+                        "h-7 shrink-0 border-gold/40 px-2.5 text-gold hover:bg-gold/10 hover:text-gold",
+                        isPicked && "bg-gold text-[#101010] hover:bg-gold hover:text-[#101010]",
+                      )}
+                    >
+                      {isPicked ? <Check /> : <Plus />}
+                      {isPicked ? "Adicionado" : "Agendar"}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Selo “pelo pacote” ao lado de um serviço já escolhido. */
+function PackageServiceBadge({ packages, serviceId }: { packages: AgendaCustomerPackage[] | undefined; serviceId: string }) {
+  const match = packageByService(packages).get(serviceId);
+  if (!match) return null;
+  return (
+    <span className="flex shrink-0 items-center gap-1 rounded-full border border-gold/35 bg-gold/10 px-1.5 py-0.5 text-[0.6rem] font-semibold tracking-wide text-gold uppercase">
+      <Layers className="size-3" aria-hidden="true" />
+      Pacote · restam {match.remaining}
+    </span>
+  );
+}
+
 function NewAppointmentWizard({
   slug,
   target,
@@ -132,6 +241,11 @@ function NewAppointmentWizard({
 
   const [step, setStep] = useState<NewStep>("cliente");
   const stepIndex = steps.indexOf(step);
+  // Cada etapa começa do topo do modal (sem herdar a rolagem da anterior).
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    bodyRef.current?.scrollTo(0, 0);
+  }, [step]);
 
   const [state, action, pending] = useActionState(saveAppointmentAction.bind(null, slug, null), initialAgendaState);
 
@@ -371,7 +485,7 @@ function NewAppointmentWizard({
         <input key={id} type="hidden" name="serviceIds" value={id} />
       ))}
 
-      <DialogBody className="flex flex-col gap-5">
+      <DialogBody ref={bodyRef} className="flex flex-col gap-5">
         <WizardStepNav steps={steps} step={step} stepIndex={stepIndex} labels={stepLabels} />
 
         {stepError ? <FormAlert tone="error">{stepError}</FormAlert> : null}
@@ -429,17 +543,27 @@ function NewAppointmentWizard({
                   )}
                 </div>
               ) : (
-                <ServiceChecklist
-                  services={available}
-                  popularIds={popularIds}
-                  searchable
-                  picked={picked}
-                  minutesOf={(id) => {
-                    const s = services.find((x) => x.id === id)!;
-                    return barberId ? (barberOffers[id] ?? s.minutes) : s.minutes;
-                  }}
-                  onToggle={toggle}
-                />
+                <>
+                  <PackageServicesPanel
+                    packages={customer.selected?.packages}
+                    services={services}
+                    availableIds={new Set(available.map((s) => s.id))}
+                    picked={picked}
+                    onToggle={toggle}
+                  />
+                  <ServiceChecklist
+                    services={available}
+                    popularIds={popularIds}
+                    searchable
+                    picked={picked}
+                    minutesOf={(id) => {
+                      const s = services.find((x) => x.id === id)!;
+                      return barberId ? (barberOffers[id] ?? s.minutes) : s.minutes;
+                    }}
+                    onToggle={toggle}
+                    packageByService={packageByService(customer.selected?.packages)}
+                  />
+                </>
               )}
               <FieldError id="serviceIds-error" message={errors.serviceIds} />
               {lines.length > 0 ? <TotalsCard sum={sum} /> : null}
@@ -613,6 +737,7 @@ function NewAppointmentWizard({
                           <Scissors className="size-3" aria-hidden="true" />
                         </span>
                         <span className="min-w-0 flex-1 truncate text-sm">{l.name}</span>
+                        <PackageServiceBadge packages={customer.selected?.packages} serviceId={l.id} />
                         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatDuration(l.minutes)}</span>
                         <span className="w-16 shrink-0 text-right text-sm tabular-nums">{formatBRL(l.priceCents)}</span>
                       </li>
@@ -725,7 +850,9 @@ function AppointmentDetailView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <DialogBody scroll={false} className="flex flex-col gap-5">
+      {/* Rolagem no corpo: com vários serviços/observação longa, nada fica
+          cortado para fora do modal (a observação é o último bloco). */}
+      <DialogBody className="flex flex-col gap-5">
         {statusError ? <FormAlert tone="error">{statusError}</FormAlert> : null}
 
         {/* Horário — limpo: hora grande, situação ao lado, data numa linha */}
@@ -794,6 +921,15 @@ function AppointmentDetailView({
 
         <div className="h-px bg-border/60" aria-hidden="true" />
 
+        {/* Observação logo no topo: é aviso operacional (ex.: "avisar quando
+            estiver a caminho") — precisa ser vista sem rolar o modal. */}
+        {entry.notes?.trim() ? (
+          <div className="rounded-xl border border-gold/25 bg-gold/[0.05] px-3.5 py-3">
+            <p className="label-caps text-[0.6rem] text-gold/85">Observação</p>
+            <p className="mt-1.5 whitespace-pre-wrap text-sm leading-snug text-cream/90">{entry.notes.trim()}</p>
+          </div>
+        ) : null}
+
         {/* Serviços — lista simples com total */}
         <div>
           <p className="label-caps text-[0.6rem] text-muted-foreground">Serviços</p>
@@ -826,15 +962,6 @@ function AppointmentDetailView({
             </>
           )}
         </div>
-
-        {entry.notes?.trim() ? (
-          <div>
-            <p className="label-caps text-[0.6rem] text-muted-foreground">Observação</p>
-            <p className="mt-1.5 line-clamp-2 whitespace-pre-wrap text-sm leading-snug text-cream/85">
-              {entry.notes.trim()}
-            </p>
-          </div>
-        ) : null}
 
         {author ? (
           <p className="pt-0.5 text-center text-[0.7rem] text-muted-foreground/55">Marcado por {author}</p>
@@ -911,6 +1038,11 @@ function EditAppointmentWizard({
   const steps: NewStep[] = ["cliente", "servicos", "horario", "revisao"];
   const [step, setStep] = useState<NewStep>("cliente");
   const stepIndex = steps.indexOf(step);
+  // Cada etapa começa do topo do modal (sem herdar a rolagem da anterior).
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    bodyRef.current?.scrollTo(0, 0);
+  }, [step]);
 
   const [state, action, pending] = useActionState(
     saveAppointmentAction.bind(null, slug, entry.id),
@@ -950,6 +1082,26 @@ function EditAppointmentWizard({
   useEffect(() => {
     if (step === "horario") onRefresh();
   }, [step, onRefresh]);
+
+  // Ao editar, o cliente já vem selecionado sem os pacotes: carrega o saldo
+  // para mostrar os serviços do pacote e as quantidades disponíveis.
+  useEffect(() => {
+    if (!entry.customerId || customer.selected?.packages !== undefined) return;
+    let alive = true;
+    getCustomerPackagesAction(slug, entry.customerId)
+      .then((pkgs) => {
+        if (!alive) return;
+        setCustomer((cur) =>
+          cur.selected?.id === entry.customerId
+            ? { ...cur, selected: { ...cur.selected, packages: pkgs } }
+            : cur,
+        );
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [slug, entry.customerId, customer.selected?.packages]);
 
   const errors = state.fieldErrors ?? {};
   const barber = barbers.find((b) => b.id === barberId);
@@ -1150,7 +1302,7 @@ function EditAppointmentWizard({
         <input key={id} type="hidden" name="serviceIds" value={id} />
       ))}
 
-      <DialogBody className="flex flex-col gap-5">
+      <DialogBody ref={bodyRef} className="flex flex-col gap-5">
         <WizardStepNav steps={steps} step={step} stepIndex={stepIndex} labels={stepLabels} />
 
         {stepError ? <FormAlert tone="error">{stepError}</FormAlert> : null}
@@ -1184,19 +1336,29 @@ function EditAppointmentWizard({
                   Nenhum serviço disponível.
                 </p>
               ) : (
-                <ServiceChecklist
-                  services={available}
-                  popularIds={popularIds}
-                  searchable
-                  picked={picked}
-                  minutesOf={(id) => {
-                    const saved = entry.services.find((x) => x.serviceId === id);
-                    if (saved) return saved.minutes;
-                    const s = services.find((x) => x.id === id)!;
-                    return barberId ? (barberOffers[id] ?? s.minutes) : s.minutes;
-                  }}
-                  onToggle={toggle}
-                />
+                <>
+                  <PackageServicesPanel
+                    packages={customer.selected?.packages}
+                    services={services}
+                    availableIds={new Set(available.map((s) => s.id))}
+                    picked={picked}
+                    onToggle={toggle}
+                  />
+                  <ServiceChecklist
+                    services={available}
+                    popularIds={popularIds}
+                    searchable
+                    picked={picked}
+                    minutesOf={(id) => {
+                      const saved = entry.services.find((x) => x.serviceId === id);
+                      if (saved) return saved.minutes;
+                      const s = services.find((x) => x.id === id)!;
+                      return barberId ? (barberOffers[id] ?? s.minutes) : s.minutes;
+                    }}
+                    onToggle={toggle}
+                    packageByService={packageByService(customer.selected?.packages)}
+                  />
+                </>
               )}
               <FieldError id="serviceIds-error" message={errors.serviceIds} />
               {lines.length > 0 ? <TotalsCard sum={sum} /> : null}
@@ -1371,6 +1533,7 @@ function EditAppointmentWizard({
                           <Scissors className="size-3" aria-hidden="true" />
                         </span>
                         <span className="min-w-0 flex-1 truncate text-sm">{l.name}</span>
+                        <PackageServiceBadge packages={customer.selected?.packages} serviceId={l.id} />
                         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                           {formatDuration(l.minutes)}
                         </span>
@@ -1451,6 +1614,7 @@ function ServiceChecklist({
   priceOf,
   onToggle,
   named,
+  packageByService: packageMap,
 }: {
   services: AgendaService[];
   popularIds?: string[];
@@ -1460,6 +1624,7 @@ function ServiceChecklist({
   priceOf?: (id: string) => number;
   onToggle: (id: string) => void;
   named?: boolean;
+  packageByService?: Map<string, { packageName: string; remaining: number }>;
 }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -1521,6 +1686,12 @@ function ServiceChecklist({
                     <span aria-hidden="true">·</span>
                     {formatBRL(price)}
                   </span>
+                  {packageMap?.get(s.id) ? (
+                    <span className="mt-1 flex w-fit items-center gap-1 rounded-full border border-gold/35 bg-gold/10 px-1.5 py-0.5 text-[0.6rem] font-semibold tracking-wide text-gold uppercase">
+                      <Layers className="size-3" aria-hidden="true" />
+                      Pacote · restam {packageMap.get(s.id)!.remaining}
+                    </span>
+                  ) : null}
                 </span>
                 <span
                   aria-hidden="true"

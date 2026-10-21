@@ -32,7 +32,7 @@ Cada cliente pode ter **várias observações**, escritas pela recepção de qua
 
 ### Aba "Histórico"
 
-Resumo (**visitas, total gasto, ticket médio e última visita**, só com comandas fechadas) e lista de comandas **de todas as unidades**, cada uma com a unidade, o profissional, os itens, o status e o valor. As comandas ainda não existem: hoje a aba mostra "Nenhuma comanda ainda". Quando o módulo chegar, basta alimentar `listCustomerHistory` (`src/lib/customers/queries.ts`); o tipo `CustomerHistoryEntry` já define o formato.
+Resumo (**visitas, total gasto, ticket médio e última visita**, só com comandas fechadas) e lista de comandas **de todas as unidades**, cada uma com a unidade, o profissional, os itens, o status e o valor (`listCustomerHistory` em `src/lib/customers/queries.ts`). A ficha também tem a aba **Pacotes** (saldo, venda e cancelamento).
 
 ### Aba "Situação"
 
@@ -43,7 +43,7 @@ Desativar/reativar. Não há exclusão: o cliente desativado some da agenda e da
 | Campo | Regra |
 |---|---|
 | Nome | Obrigatório, 2 a 120 caracteres |
-| Telefone | Obrigatório. DDD + fixo de 8 ou celular de 9 dígitos, máscara `(11) 91234-5678`, guarda só dígitos. **Pode repetir** (famílias dividem o número) |
+| Telefone | Obrigatório. DDD + fixo de 8 ou celular de 9 dígitos, máscara `(11) 91234-5678`, guarda só dígitos. **Único na rede** (índice parcial). Repetido mostra o nome de quem já tem o número |
 | E-mail | Opcional; formato válido; vira minúsculo |
 | CPF | Opcional; 11 dígitos com dígitos verificadores (rejeita `111.111.111-11`); máscara `000.000.000-00`; guarda só dígitos. **Único na rede inteira** (CPF repetido mostra "Já existe um cliente com este CPF.") |
 | Nascimento | Opcional; de 1900-01-01 até hoje. A ficha mostra a idade |
@@ -54,7 +54,7 @@ Desativar/reativar. Não há exclusão: o cliente desativado some da agenda e da
 ## Busca e lista
 
 - A busca roda no servidor (`listCustomers`): a rede pode ter milhares de clientes, então não se filtra no navegador. Digitar atualiza `?q=` após uma pausa de 350 ms.
-- O texto digitado é limpo antes de entrar no filtro do PostgREST (vírgula, parênteses e asteriscos mudariam o sentido da consulta). Nome usa a coluna `search_name` (gerada: minúsculas e sem acento), por isso "jose animo" acha "José Ânimo". Números (3 ou mais dígitos) buscam também em telefone e CPF.
+- O texto digitado é limpo antes de entrar no filtro do PostgREST (vírgula, parênteses e asteriscos mudariam o sentido da consulta). `%` e `_` são escapados, senão o `LIKE` traria todos os clientes. Nome usa a coluna `search_name` (gerada: minúsculas e sem acento), por isso "jose animo" acha "José Ânimo". Números (3 ou mais dígitos) buscam também em telefone e CPF.
 - Ordem: ativos primeiro, depois por nome. Paginação por `?page=` com Anterior/Próxima e contagem total.
 - A origem aparece pelo nome: a recepção não lê `units` de outras unidades, então os nomes vêm da função `network_units()`.
 
@@ -70,7 +70,7 @@ Desativar/reativar. Não há exclusão: o cliente desativado some da agenda e da
 |---|---|---|---|
 | admin da rede | lê, cadastra e edita (qualquer unidade) | lê, escreve, edita e exclui | grava |
 | recepção de qualquer unidade | lê e edita todos; cadastra só com origem na **própria** unidade | lê todas; escreve só com a **própria** unidade; edita e exclui qualquer uma | grava |
-| barbeiro | nada (dados do cliente na agenda virão por consultas específicas) | nada | nada |
+| barbeiro | nada direto na tabela (o nome na agenda vem de consultas da própria agenda) | nada | nada |
 | anônimo / sem papel | nada | nada | só lê a foto por URL pública |
 
 - **Sem `DELETE` em `customers`**: o cliente é desativado. Observações podem ser excluídas; apagar o cliente (rotina do servidor) apaga as observações em cascata.
@@ -98,4 +98,4 @@ Desativar/reativar. Não há exclusão: o cliente desativado some da agenda e da
 
 ## Fora do escopo por enquanto
 
-Autocadastro (página pública), preferência de profissional, comandas reais no histórico, exclusão/anonimização por pedido do titular e importação de clientes.
+Autocadastro (página pública), exclusão/anonimização por pedido do titular e importação de clientes.

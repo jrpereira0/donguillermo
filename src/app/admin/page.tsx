@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Percent, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,9 +22,14 @@ export default async function AdminHome() {
           <p className="label-caps">Painel da rede</p>
           <h1 className="text-3xl">Unidades</h1>
         </div>
-        <Link href="/admin/unidades/nova" className={buttonVariants({ size: "lg" })}>
-          <Plus /> Nova unidade
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/admin/comissoes" className={buttonVariants({ variant: "outline", size: "lg" })}>
+            <Percent /> Tabela de comissões
+          </Link>
+          <Link href="/admin/unidades/nova" className={buttonVariants({ size: "lg" })}>
+            <Plus /> Nova unidade
+          </Link>
+        </div>
       </div>
 
       {units.length === 0 ? (

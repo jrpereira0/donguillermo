@@ -32,7 +32,6 @@ const base = {
   instagram: "",
   facebook: "",
   tiktok: "",
-  commissionServices: "",
   commissionProducts: "",
 };
 
@@ -110,7 +109,6 @@ describe("barberDetailsSchema", () => {
       expect(r.data.cnpj).toBeNull();
       expect(r.data.birthDate).toBeNull();
       expect(r.data.instagram).toBeNull();
-      expect(r.data.commissionServices).toBe(0);
       expect(r.data.commissionProducts).toBe(0);
     }
   });
@@ -122,7 +120,6 @@ describe("barberDetailsSchema", () => {
       instagram: "https://instagram.com/joao.barber/",
       tiktok: "@joaobarber",
       facebook: "facebook.com/joao.barber",
-      commissionServices: "12,5",
       commissionProducts: "40",
       phone: "(11) 99999-0000",
       birthDate: "1990-05-17",
@@ -133,7 +130,6 @@ describe("barberDetailsSchema", () => {
       expect(r.data.instagram).toBe("joao.barber");
       expect(r.data.tiktok).toBe("joaobarber");
       expect(r.data.facebook).toBe("joao.barber");
-      expect(r.data.commissionServices).toBe(12.5);
       expect(r.data.commissionProducts).toBe(40);
       expect(r.data.phone).toBe("11999990000");
     }
@@ -181,8 +177,8 @@ describe("barberDetailsSchema", () => {
     ["birthDate", "17/05/1990"],
     ["instagram", "usuário com espaço"],
     ["instagram", "a".repeat(31)],
-    ["commissionServices", "101"],
-    ["commissionServices", "-5"],
+    ["commissionProducts", "101"],
+    ["commissionProducts", "-5"],
     ["commissionProducts", "abc"],
     ["commissionProducts", "10,123"],
   ])("rejeita %s = %s", (field, value) => {

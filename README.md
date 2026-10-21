@@ -1,6 +1,6 @@
 # Don Guillermo — Sistema de gestão
 
-Sistema multi-unidade para a rede de barbearias Don Guillermo: agendamento, cadastros e caixa, com isolamento por unidade garantido por RLS no Supabase.
+Sistema multi-unidade para a rede de barbearias Don Guillermo: agenda, comandas, caixa, comissões e cadastros, com isolamento por unidade garantido por RLS no Supabase.
 
 **Stack:** Next.js 16 (App Router) + TypeScript · Tailwind + shadcn/ui (tema em tokens) · Supabase (Auth, Postgres, RLS) · Zod.
 

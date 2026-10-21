@@ -42,7 +42,10 @@ export function resolvePeriod(sp: { de?: string; ate?: string }): CommissionPeri
 
 export const periodLabel = (de: string, ate: string) => {
   const fmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", timeZone: TZ });
-  const a = fmt.format(new Date(`${de}T12:00:00`));
-  const b = fmt.format(new Date(`${ate}T12:00:00`));
+  // O mês abreviado do pt-BR já termina com ponto ("20 de out."): removemos
+  // para quem chama poder pontuar a frase sem sair "20 de out..".
+  const clean = (iso: string) => fmt.format(new Date(`${iso}T12:00:00`)).replace(/\.$/, "");
+  const a = clean(de);
+  const b = clean(ate);
   return de === ate ? a : `${a} – ${b}`;
 };

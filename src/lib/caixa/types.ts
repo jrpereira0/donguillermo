@@ -54,12 +54,34 @@ export type ClosedRegister = OpenRegister & {
 };
 
 export type TicketLine = {
-  kind: "servico" | "produto";
+  kind: "servico" | "produto" | "pacote";
   serviceId: string | null;
   name: string;
   quantity: number;
   unitPriceCents: number;
   barberId: string | null;
+  /** Pacote do cliente: venda (kind "pacote") ou uso de serviço (servico + este campo). */
+  customerPackageId: string | null;
+  packageId: string | null;
+  packageName: string | null;
+};
+
+/** Pacote ativo do cliente da comanda, com saldo por serviço (sem contar esta comanda). */
+export type TicketPackageOption = {
+  customerPackageId: string;
+  packageName: string;
+  items: { serviceId: string; serviceName: string; quantityTotal: number; remaining: number; unitPriceCents: number }[];
+};
+
+/** Pacote do catálogo que pode ser vendido nesta comanda. */
+export type TicketPackageSaleOption = {
+  packageId: string;
+  name: string;
+  priceCents: number;
+  listCents: number;
+  discountPct: number;
+  totalServices: number;
+  items: { serviceId: string; serviceName: string; quantity: number; unitPriceCents: number }[];
 };
 
 export type TicketDetail = {

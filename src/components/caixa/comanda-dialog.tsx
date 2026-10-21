@@ -1,7 +1,7 @@
 "use client";
 
 import { DialogShell } from "@/components/agenda/dialog-shell";
-import type { CatalogBarber, CatalogProduct, CatalogService, TicketDetail } from "@/lib/caixa/types";
+import type { CatalogBarber, CatalogProduct, CatalogService, TicketDetail, TicketPackageOption, TicketPackageSaleOption } from "@/lib/caixa/types";
 import { TicketEditor } from "./ticket-editor";
 
 export function ComandaDialog({
@@ -12,6 +12,8 @@ export function ComandaDialog({
   barbers,
   registerOpen,
   registerDay,
+  packages,
+  salePackages,
   onClose,
   onCharged,
   onSaved,
@@ -24,6 +26,8 @@ export function ComandaDialog({
   barbers: CatalogBarber[];
   registerOpen: boolean;
   registerDay?: string | null;
+  packages?: TicketPackageOption[];
+  salePackages?: TicketPackageSaleOption[];
   onClose: () => void;
   onCharged: (message: string) => void;
   onSaved?: (message: string) => void;
@@ -40,6 +44,8 @@ export function ComandaDialog({
         barbers={barbers}
         registerOpen={registerOpen}
         registerDay={registerDay}
+        packages={packages}
+        salePackages={salePackages}
         onCharged={onCharged}
         onSaved={onSaved}
         onReopened={onReopened}

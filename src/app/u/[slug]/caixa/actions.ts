@@ -4,25 +4,29 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireUnitArea } from "@/lib/auth/guards";
-import { PAY_METHODS, type PayMethod } from "@/lib/caixa/math";
+import { expectedCash, PAY_METHODS, type PayMethod } from "@/lib/caixa/math";
 import { getOpenRegister, getTicket, listCatalog } from "@/lib/caixa/queries";
-import type { CatalogBarber, CatalogProduct, CatalogService, TicketDetail } from "@/lib/caixa/types";
+import type { CatalogBarber, CatalogProduct, CatalogService, TicketDetail, TicketPackageOption, TicketPackageSaleOption } from "@/lib/caixa/types";
+import { packagePriceCents } from "@/lib/packages/math";
+import { getPackage, listCustomerPackages, listPackages } from "@/lib/packages/queries";
 import { formatRetry, rateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import type { FormState } from "@/lib/validation/auth";
-import { moneyToCents } from "@/lib/validation/service";
+import { formatBRL, moneyToCents } from "@/lib/validation/service";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const GENERIC = "Não foi possível concluir. Tente novamente.";
 const ONE_HOUR = 60 * 60_000;
 
 const lineSchema = z.object({
-  kind: z.enum(["servico", "produto"]),
+  kind: z.enum(["servico", "produto", "pacote"]),
   serviceId: z.string().regex(UUID).nullable(),
   name: z.string().trim().min(1).max(80),
   quantity: z.number().int().min(1).max(20),
   unitPriceCents: z.number().int().min(0).max(10_000_000),
   barberId: z.string().regex(UUID).nullable(),
+  customerPackageId: z.string().regex(UUID).nullable().optional(),
+  packageId: z.string().regex(UUID).nullable().optional(),
 });
 const paySchema = z.object({
   method: z.enum(PAY_METHODS.map((m) => m.value) as [PayMethod, ...PayMethod[]]),
@@ -83,11 +87,13 @@ function readPayload(formData: FormData) {
     barberId,
     items: lines.data.map((l) => ({
       kind: l.kind,
-      service_id: l.kind === "produto" ? null : l.serviceId,
+      service_id: l.kind === "servico" ? l.serviceId : null,
       name: l.name,
       quantity: l.quantity,
       unit_price_cents: l.unitPriceCents,
       barber_id: l.barberId,
+      customer_package_id: l.customerPackageId ?? null,
+      package_id: l.packageId ?? null,
     })),
     tips: tipRows.data.map((t) => ({ barber_id: t.barberId, amount_cents: t.amountCents })),
     payments: pays.data.map((p) => ({
@@ -103,6 +109,8 @@ function touch(slug: string) {
   revalidatePath(`/u/${slug}/caixa/historico`);
   revalidatePath(`/u/${slug}/agenda`);
   revalidatePath(`/u/${slug}/clientes`);
+  // Fichas abertas precisam refletir na hora o saldo do pacote baixado na comanda.
+  revalidatePath(`/u/${slug}/clientes/[id]`, "page");
 }
 
 const dayLabel = (iso: string) =>
@@ -219,12 +227,32 @@ export async function cashMovementAction(slug: string, registerId: string, _prev
   const supabase = await createClient();
   const { data: reg } = await supabase
     .from("cash_registers")
-    .select("id")
+    .select("id, opening_cents")
     .eq("id", registerId)
     .eq("unit_id", unit.id)
     .eq("status", "aberto")
-    .maybeSingle();
+    .maybeSingle<{ id: string; opening_cents: number }>();
   if (!reg) return fail("O caixa não está aberto.");
+
+  if (kind === "sangria") {
+    // A sangria não pode passar do dinheiro que há na gaveta (fundo +
+    // suprimentos − sangrias + vendas em dinheiro). O gatilho no banco é a
+    // última linha; aqui a mensagem já vem com o valor disponível.
+    const [{ data: movs }, { data: pays }] = await Promise.all([
+      supabase.from("cash_movements").select("kind, amount_cents").eq("register_id", registerId).limit(1000),
+      supabase.from("ticket_payments").select("amount_cents").eq("register_id", registerId).eq("method", "dinheiro").limit(2000),
+    ]);
+    const sum = (rows: { amount_cents: number }[] | null) => (rows ?? []).reduce((n, r) => n + r.amount_cents, 0);
+    const esperado = expectedCash({
+      openingCents: reg.opening_cents,
+      suprimentoCents: sum((movs ?? []).filter((m) => m.kind === "suprimento")),
+      sangriaCents: sum((movs ?? []).filter((m) => m.kind === "sangria")),
+      dinheiroCents: sum(pays),
+    });
+    if (amount > esperado) {
+      return fail(`A sangria não pode passar do dinheiro na gaveta (${formatBRL(esperado)}).`);
+    }
+  }
 
   const { error } = await supabase.from("cash_movements").insert({
     register_id: registerId,
@@ -235,6 +263,7 @@ export async function cashMovementAction(slug: string, registerId: string, _prev
   });
   if (error) {
     console.error("[caixa] movement:", error.code);
+    if (error.code === "22023") return fail("A sangria não pode passar do dinheiro na gaveta.");
     return fail(GENERIC);
   }
   touch(slug);
@@ -295,7 +324,7 @@ export async function openTicketFromAppointmentAction(slug: string, appointmentI
 }
 
 export async function saveTicketAction(slug: string, ticketId: string, _prev: FormState, formData: FormData): Promise<FormState> {
-  const { ctx } = await requireUnitArea(slug, "caixa");
+  const { ctx, unit } = await requireUnitArea(slug, "caixa");
   const limited = throttled(ctx.userId);
   if (limited) return limited;
   if (!UUID.test(ticketId)) return fail(GENERIC);
@@ -303,13 +332,15 @@ export async function saveTicketAction(slug: string, ticketId: string, _prev: Fo
   if (!payload) return fail("Confira os itens da comanda.");
 
   const supabase = await createClient();
+  const sold = await materializePackageSales(supabase, unit.id, ticketId, payload.items);
+  if ("error" in sold) return fail(sold.error);
   const { error } = await supabase.rpc("save_open_ticket", {
     p_id: ticketId,
     p_discount: payload.discount,
     p_tip: payload.tip,
     p_notes: payload.notes,
     p_barber: payload.barberId,
-    p_items: payload.items,
+    p_items: sold.items,
     p_tips: payload.tips,
   });
   if (error) {
@@ -322,7 +353,7 @@ export async function saveTicketAction(slug: string, ticketId: string, _prev: Fo
 }
 
 export async function chargeTicketAction(slug: string, ticketId: string, _prev: FormState, formData: FormData): Promise<FormState> {
-  const { ctx } = await requireUnitArea(slug, "caixa");
+  const { ctx, unit } = await requireUnitArea(slug, "caixa");
   const limited = throttled(ctx.userId);
   if (limited) return limited;
   if (!UUID.test(ticketId)) return fail(GENERIC);
@@ -330,12 +361,14 @@ export async function chargeTicketAction(slug: string, ticketId: string, _prev: 
   if (!payload || payload.items.length === 0) return fail("Adicione pelo menos um item.");
 
   const supabase = await createClient();
+  const sold = await materializePackageSales(supabase, unit.id, ticketId, payload.items);
+  if ("error" in sold) return fail(sold.error);
   const { error } = await supabase.rpc("charge_ticket", {
     p_id: ticketId,
     p_discount: payload.discount,
     p_tip: payload.tip,
     p_barber: payload.barberId,
-    p_items: payload.items,
+    p_items: sold.items,
     p_payments: payload.payments,
     p_tips: payload.tips,
   });
@@ -367,8 +400,203 @@ export async function reopenTicketAction(slug: string, ticketId: string, _prev: 
 }
 
 export type ComandaLoad =
-  | { ok: true; ticket: TicketDetail; services: CatalogService[]; products: CatalogProduct[]; barbers: CatalogBarber[]; registerOpen: boolean; registerDay: string | null }
+  | {
+      ok: true;
+      ticket: TicketDetail;
+      services: CatalogService[];
+      products: CatalogProduct[];
+      barbers: CatalogBarber[];
+      registerOpen: boolean;
+      registerDay: string | null;
+      packages: TicketPackageOption[];
+      salePackages: TicketPackageSaleOption[];
+    }
   | { ok: false; message: string };
+
+/** Catálogo vendável na comanda (pacotes ativos com serviços). */
+export async function salePackageOptions(unitId: string): Promise<TicketPackageSaleOption[]> {
+  const catalog = await listPackages(unitId);
+  return catalog
+    .filter((p) => p.isActive && p.items.length > 0)
+    .map((p) => ({
+      packageId: p.id,
+      name: p.name,
+      priceCents: p.priceCents,
+      listCents: p.listCents,
+      discountPct: p.discountPct,
+      totalServices: p.items.reduce((n, i) => n + i.quantity, 0),
+      items: p.items.map((i) => ({
+        serviceId: i.serviceId,
+        serviceName: i.serviceName,
+        quantity: i.quantity,
+        unitPriceCents: i.unitPriceCents,
+      })),
+    }));
+}
+
+type PayloadItem = NonNullable<ReturnType<typeof readPayload>>["items"][number];
+
+/**
+ * Venda de pacote dentro da comanda: para cada item "pacote" ainda sem o pacote
+ * do cliente, cria o pacote dele (pendente, foto do catálogo) ligado a esta
+ * comanda — ao cobrar, o banco ativa. Reaproveita vendas pendentes desta
+ * comanda (salvar de novo não duplica) e cancela as que saíram da comanda.
+ */
+async function materializePackageSales(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  unitId: string,
+  ticketId: string,
+  items: PayloadItem[],
+): Promise<{ items: PayloadItem[] } | { error: string }> {
+  const saleLines = items.filter((i) => i.kind === "pacote");
+  const { data: existing } = await supabase
+    .from("customer_packages")
+    .select("id, package_id, price_cents")
+    .eq("unit_id", unitId)
+    .eq("sold_ticket_id", ticketId)
+    .eq("status", "pendente")
+    .returns<{ id: string; package_id: string | null; price_cents: number }[]>();
+  const pending = existing ?? [];
+  if (!saleLines.length) {
+    if (items.some((i) => i.kind === "servico" && i.package_id && !i.customer_package_id)) {
+      return { error: "Para usar os serviços do pacote agora, mantenha também a venda do pacote nesta comanda." };
+    }
+    // Nenhuma venda na comanda: cancela pacotes pendentes que eram dela.
+    if (pending.length) {
+      await supabase
+        .from("customer_packages")
+        .update({ status: "cancelada" })
+        .in("id", pending.map((c) => c.id))
+        .eq("unit_id", unitId);
+    }
+    return { items };
+  }
+
+  const { data: ticket } = await supabase
+    .from("tickets")
+    .select("customer_id")
+    .eq("id", ticketId)
+    .eq("unit_id", unitId)
+    .maybeSingle<{ customer_id: string | null }>();
+  if (!ticket?.customer_id) {
+    return { error: "Para vender um pacote, a comanda precisa ser de um cliente cadastrado (com ficha). Abra pela agenda ou pela ficha do cliente." };
+  }
+
+  const assigned = new Set<string>();
+  /** Pacote do cliente por modelo (package_id), entre pendentes e recém-criados. */
+  const saleByTemplate = new Map<string, { id: string; price_cents: number }>();
+  const out: PayloadItem[] = [];
+  for (const item of items) {
+    if (item.kind !== "pacote") {
+      out.push(item);
+      continue;
+    }
+    const known = item.customer_package_id ? pending.find((c) => c.id === item.customer_package_id) : undefined;
+    if (known) {
+      assigned.add(known.id);
+      if (known.package_id) saleByTemplate.set(known.package_id, known);
+      out.push({ ...item, customer_package_id: known.id, package_id: known.package_id, unit_price_cents: known.price_cents });
+      continue;
+    }
+    const reuse = item.package_id
+      ? pending.find((c) => c.package_id === item.package_id && !assigned.has(c.id))
+      : undefined;
+    if (reuse) {
+      assigned.add(reuse.id);
+      saleByTemplate.set(reuse.package_id!, reuse);
+      out.push({ ...item, customer_package_id: reuse.id, package_id: reuse.package_id, unit_price_cents: reuse.price_cents });
+      continue;
+    }
+    if (!item.package_id) return { error: "Escolha o pacote para vender." };
+    const pkg = await getPackage(unitId, item.package_id);
+    if (!pkg || !pkg.isActive || !pkg.items.length) return { error: "Pacote não encontrado ou desativado." };
+    const price = packagePriceCents(pkg.listCents, pkg.discountPct);
+    const { data: cp, error: cpError } = await supabase
+      .from("customer_packages")
+      .insert({
+        unit_id: unitId,
+        customer_id: ticket.customer_id,
+        package_id: pkg.id,
+        package_name: pkg.name,
+        discount_pct: pkg.discountPct,
+        list_cents: pkg.listCents,
+        price_cents: price,
+        validity_days: pkg.validityDays,
+        status: "pendente",
+        sold_ticket_id: ticketId,
+      })
+      .select("id")
+      .single();
+    if (cpError || !cp) {
+      console.error("[caixa] package sale:", cpError?.code);
+      return { error: GENERIC };
+    }
+    const { error: cpItemsError } = await supabase.from("customer_package_items").insert(
+      pkg.items.map((i) => ({
+        customer_package_id: cp.id,
+        unit_id: unitId,
+        service_id: i.serviceId,
+        service_name: i.serviceName,
+        quantity_total: i.quantity,
+        unit_price_cents: i.unitPriceCents,
+      })),
+    );
+    if (cpItemsError) {
+      console.error("[caixa] package sale items:", cpItemsError.code);
+      return { error: GENERIC };
+    }
+    assigned.add(cp.id);
+    saleByTemplate.set(pkg.id, { id: cp.id, price_cents: price });
+    out.push({ ...item, name: pkg.name, quantity: 1, customer_package_id: cp.id, package_id: pkg.id, unit_price_cents: price });
+  }
+
+  // Uso na mesma comanda da venda: serviço "pelo pacote" que aponta para o modelo
+  // vendido aqui ganha o pacote do cliente criado acima (preço da foto da venda).
+  for (let idx = 0; idx < out.length; idx++) {
+    const item = out[idx]!;
+    if (item.kind !== "servico" || item.customer_package_id || !item.package_id) continue;
+    const cp = saleByTemplate.get(item.package_id);
+    if (!cp) {
+      return { error: "Para usar os serviços do pacote agora, mantenha também a venda do pacote nesta comanda." };
+    }
+    const { data: cpi } = await supabase
+      .from("customer_package_items")
+      .select("unit_price_cents")
+      .eq("customer_package_id", cp.id)
+      .eq("service_id", item.service_id ?? "")
+      .maybeSingle<{ unit_price_cents: number }>();
+    if (!cpi) return { error: "Este serviço não faz parte do pacote vendido." };
+    out[idx] = { ...item, customer_package_id: cp.id, unit_price_cents: cpi.unit_price_cents };
+  }
+
+  // Venda que saiu da comanda (item excluído): cancela o pacote pendente dela.
+  const orphans = pending.filter((c) => !assigned.has(c.id)).map((c) => c.id);
+  if (orphans.length) {
+    await supabase.from("customer_packages").update({ status: "cancelada" }).in("id", orphans).eq("unit_id", unitId);
+  }
+  return { items: out };
+}
+
+export async function usablePackages(unitId: string, ticket: TicketDetail): Promise<TicketPackageOption[]> {
+  if (!ticket.customerId) return [];
+  const cps = await listCustomerPackages(unitId, ticket.customerId, {
+    excludeTicketId: ticket.id,
+    onlyUsable: true,
+  });
+  return cps.map((cp) => ({
+    customerPackageId: cp.id,
+    packageName: cp.packageName,
+    items: cp.items
+      .filter((i) => i.serviceId)
+      .map((i) => ({
+        serviceId: i.serviceId!,
+        serviceName: i.serviceName,
+        quantityTotal: i.quantityTotal,
+        remaining: i.quantityTotal - i.used,
+        unitPriceCents: i.unitPriceCents,
+      })),
+  }));
+}
 
 /** Abre (ou reabre) a comanda do agendamento e devolve os dados para o modal da agenda. */
 export async function loadComandaAction(slug: string, appointmentId: string): Promise<ComandaLoad> {
@@ -394,6 +622,8 @@ export async function loadComandaAction(slug: string, appointmentId: string): Pr
     barbers: catalog.barbers,
     registerOpen: !!register,
     registerDay: register?.businessDate ?? null,
+    packages: await usablePackages(unit.id, ticket),
+    salePackages: await salePackageOptions(unit.id),
   };
 }
 

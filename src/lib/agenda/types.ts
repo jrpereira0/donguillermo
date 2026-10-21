@@ -1,3 +1,4 @@
+import type { UsableCustomerPackage } from "@/lib/packages/types";
 import type { FormState } from "@/lib/validation/auth";
 
 /** Profissional na grade (e no formulário). */
@@ -54,7 +55,16 @@ export type AgendaService = {
 /** `offers[barberId][serviceId]` = duração própria em minutos (null = padrão); ausente = não faz o serviço. */
 export type AgendaOffers = Record<string, Record<string, number | null>>;
 
-export type AgendaCustomerHit = { id: string; name: string; phone: string | null };
+/** Pacote utilizável do cliente nesta unidade, para agendar pelo pacote. */
+export type AgendaCustomerPackage = UsableCustomerPackage;
+
+export type AgendaCustomerHit = {
+  id: string;
+  name: string;
+  phone: string | null;
+  /** Pacotes ativos com saldo nesta unidade (undefined = ainda não carregado). */
+  packages?: AgendaCustomerPackage[];
+};
 
 /** Estado devolvido pelo formulário de agendamento/bloqueio. */
 export type AgendaFormState = FormState & {

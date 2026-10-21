@@ -110,7 +110,7 @@ export default async function ClientesPage({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground" aria-live="polite">
               {total} {total === 1 ? "cliente" : "clientes"}
-              {query ? " encontrados" : " na rede"}
+              {query ? (total === 1 ? " encontrado" : " encontrados") : " na rede"}
             </p>
             {pages > 1 ? (
               <nav className="flex items-center gap-2" aria-label="Páginas">

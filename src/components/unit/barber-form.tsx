@@ -62,7 +62,6 @@ export type BarberDefaults = {
   instagram: string;
   facebook: string;
   tiktok: string;
-  commissionServices: string;
   commissionProducts: string;
   workHours: unknown;
   photoPath: string;
@@ -89,7 +88,6 @@ export const EMPTY_DEFAULTS: BarberDefaults = {
   instagram: "",
   facebook: "",
   tiktok: "",
-  commissionServices: "",
   commissionProducts: "",
   workHours: null,
   photoPath: "",
@@ -470,15 +468,10 @@ export function BarberForm({ slug, unitId, barberId, defaults, services, mode, e
 
         {/* ---------- Comissões ---------- */}
         <div {...panel("comissoes")}>
-          <FormSection icon={Percent} title="Comissões" description="Percentual do profissional sobre o que ele vende.">
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field id="commissionServices" label="Sobre serviços" error={fe.commissionServices}>
-                <IconInput icon={<Percent className={ICON} />} id="commissionServices" name="commissionServices" inputMode="decimal" defaultValue={val("commissionServices")} placeholder="Ex.: 40" autoComplete="off" aria-invalid={!!fe.commissionServices} />
-              </Field>
-              <Field id="commissionProducts" label="Sobre produtos" error={fe.commissionProducts}>
-                <IconInput icon={<Percent className={ICON} />} id="commissionProducts" name="commissionProducts" inputMode="decimal" defaultValue={val("commissionProducts")} placeholder="Ex.: 10" autoComplete="off" aria-invalid={!!fe.commissionProducts} />
-              </Field>
-            </div>
+          <FormSection icon={Percent} title="Comissões" description="Percentual do profissional sobre os produtos que ele vende.">
+            <Field id="commissionProducts" label="Sobre produtos" error={fe.commissionProducts} className="max-w-xs">
+              <IconInput icon={<Percent className={ICON} />} id="commissionProducts" name="commissionProducts" inputMode="decimal" defaultValue={val("commissionProducts")} placeholder="Ex.: 10" autoComplete="off" aria-invalid={!!fe.commissionProducts} />
+            </Field>
           </FormSection>
         </div>
 

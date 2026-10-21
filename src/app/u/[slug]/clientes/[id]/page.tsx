@@ -5,12 +5,14 @@ import { ArrowLeft, Power } from "lucide-react";
 import { CustomerForm, type CustomerDefaults } from "@/components/unit/customer-form";
 import { CustomerHistory } from "@/components/unit/customer-history";
 import { CustomerNotes } from "@/components/unit/customer-notes";
+import { CustomerPackages } from "@/components/unit/customer-packages";
 import { FormSection } from "@/components/unit/form-parts";
 import { PageHeader } from "@/components/unit/page-header";
 import { Button } from "@/components/ui/button";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { customerPhotoUrl } from "@/lib/customers/photo";
 import { getCustomer, listCustomerHistory, listCustomerNotes, listNetworkUnitNames } from "@/lib/customers/queries";
+import { listCustomerPackages, listPackageUses, listPackages } from "@/lib/packages/queries";
 import type { CustomerRow } from "@/lib/customers/types";
 import { ageFrom } from "@/lib/validation/customer";
 import { toggleCustomerActiveAction } from "../actions";
@@ -44,12 +46,18 @@ function toDefaults(c: CustomerRow): CustomerDefaults {
 
 export default async function EditarClientePage({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
-  await requireUnitArea(slug, "clientes");
+  const { unit } = await requireUnitArea(slug, "clientes");
   if (!UUID.test(id)) notFound();
   const customer = await getCustomer(id);
   if (!customer) notFound();
 
-  const [units, history] = await Promise.all([listNetworkUnitNames(), listCustomerHistory(customer.id)]);
+  const [units, history, customerPackages, packageUses, catalog] = await Promise.all([
+    listNetworkUnitNames(),
+    listCustomerHistory(customer.id),
+    listCustomerPackages(unit.id, customer.id),
+    listPackageUses(unit.id, customer.id),
+    listPackages(unit.id),
+  ]);
   const notes = await listCustomerNotes(customer.id, units);
 
   const origin = customer.created_unit_id ? (units[customer.created_unit_id] ?? null) : null;
@@ -96,6 +104,23 @@ export default async function EditarClientePage({ params }: { params: Promise<{ 
         customerId={customer.id}
         defaults={toDefaults(customer)}
         editNotes={<CustomerNotes slug={slug} customerId={customer.id} notes={notes} />}
+        editPackages={
+          <CustomerPackages
+            slug={slug}
+            customerId={customer.id}
+            packages={customerPackages.filter((cp) => cp.status !== "cancelada")}
+            uses={packageUses}
+            sellOptions={catalog
+              .filter((p) => p.isActive && p.items.length > 0)
+              .map((p) => ({
+                id: p.id,
+                name: p.name,
+                priceCents: p.priceCents,
+                discountPct: p.discountPct,
+                totalServices: p.items.reduce((n, i) => n + i.quantity, 0),
+              }))}
+          />
+        }
         editHistory={<CustomerHistory slug={slug} entries={history} />}
         editStatus={editStatus}
       />

@@ -51,7 +51,7 @@ Tabela `barber_services` (`barber_id`, `service_id`, `unit_id`, `duration_minute
 
 - **Mesma unidade garantida pelo banco**: chaves compostas `(barber_id, unit_id)` e `(service_id, unit_id)`; não dá para ligar itens de unidades diferentes.
 - **Duração própria**: `NULL` = vale a duração padrão do serviço. Regra para a agenda: usar a do profissional se existir; senão, a do serviço.
-- **Sem ninguém ligado** é permitido (a agenda decidirá o que fazer com serviço sem profissional).
+- **Sem ninguém ligado** é permitido. O serviço continua no catálogo; na agenda ele só entra para um profissional que esteja ligado a ele.
 - **Inativos**: profissional ou serviço inativo some das escolhas, mas a ligação fica guardada e volta se for reativado.
 - O servidor (`src/lib/services/links.ts`) compara o marcado com o que existe e só insere, atualiza ou remove o necessário; considera apenas itens **ativos da própria unidade**.
 - Se o serviço (ou profissional) for salvo e a ligação falhar, o cadastro não se perde: aparece um aviso pedindo para abrir e salvar de novo.

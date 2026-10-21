@@ -28,12 +28,12 @@ flowchart TD
 |---|---|
 | `src/app/` | Rotas (App Router). `api/health` já existe. |
 | `src/app/admin/` | Painel da rede (só `admin_rede`). Ver [painel-admin.md](painel-admin.md). |
-| `src/app/u/[slug]/` | Área da unidade: `profissionais`, `servicos`, `clientes` (prontos) e `agenda`, `minha-agenda`, `produtos`, `caixa`, `configuracoes` (em breve). Cada módulo tem `page.tsx` e `actions.ts` (server actions). |
+| `src/app/u/[slug]/` | Área da unidade: `agenda`, `caixa`, `comissoes`, `clientes`, `profissionais`, `servicos`, `produtos`, `pacotes`, `configuracoes` e `minha-agenda` (barbeiro). Cada módulo tem `page.tsx` e, quando grava, `actions.ts`. |
 | `src/components/ui/` | Componentes shadcn/ui, estilizados só por tokens. |
 | `src/components/unit/` | Moldura e peças da área da unidade (menu, abas, formulários, listas). Ver [design-tokens.md](design-tokens.md). |
 | `src/components/admin/` | Formulários do painel da rede. |
-| `src/lib/validation/` | Esquemas Zod (login, unidade, profissional, serviço, cliente) com testes. |
-| `src/lib/{admin,barbers,services,customers}/` | Consultas, tipos e regras de cada módulo (sempre no servidor; a RLS decide o que cada papel vê). |
+| `src/lib/validation/` | Esquemas Zod (login, unidade, profissional, serviço, cliente, produto, pacote, agendamento) com testes. |
+| `src/lib/{admin,barbers,services,customers,products,packages,agenda,caixa,commissions}/` | Consultas, tipos e regras de cada módulo (sempre no servidor; a RLS decide o que cada papel vê). |
 | `src/lib/rate-limit.ts` | Limite de uso em memória para actions e buscas de CEP. |
 | `src/config/brand.ts` | Nome e logo da marca. |
 | `src/lib/env.ts` | Validação das variáveis de ambiente com Zod. |

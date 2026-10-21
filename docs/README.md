@@ -30,8 +30,10 @@ Sistema multi-unidade para a rede de barbearias Don Guillermo. Este índice cres
 | 5 | Painel admin (unidades e acesso da recepção) | Concluída |
 | 6 | Cadastro de profissionais | Concluída |
 | 7 | Catálogo de serviços e vínculo com profissionais | Concluída |
-| 8 | Cadastro de clientes (observações, histórico preparado) | Concluída |
-| 9 | Agenda, comandas, produtos e caixa | Pendente |
+| 8 | Cadastro de clientes (observações e histórico) | Concluída |
+| 9 | Agenda, comandas, produtos, pacotes, caixa e comissões | Concluída |
 | 10 | Autocadastro do cliente (página pública) e rotina LGPD | Pendente |
 
-Testes atuais: Vitest 157, RLS offline 229, RLS no Supabase 159, acesso 41, ponta a ponta no navegador em Profissionais/Serviços (`test:e2e`) e Clientes (77, `test:e2e:clientes`). Comandos em [setup.md](setup.md).
+Ainda em branco, de propósito: a **Minha agenda** do barbeiro (página "Em breve") e o agendamento pelo cliente no navegador. A recepção já usa a agenda completa.
+
+Testes unitários: Vitest, 230. RLS, acesso e ponta a ponta no navegador: comandos em [setup.md](setup.md).

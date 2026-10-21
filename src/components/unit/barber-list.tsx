@@ -64,6 +64,8 @@ const contactBtn = buttonVariants({
  */
 export function BarberList({ slug, barbers }: { slug: string; barbers: BarberListItem[] }) {
   const [query, setQuery] = useState("");
+  /** Profissional com a confirmação de desativar aberta (desativar nunca é num clique só). */
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const base = `/u/${slug}/profissionais`;
 
   const shown = useMemo(() => {
@@ -190,24 +192,64 @@ export function BarberList({ slug, barbers }: { slug: string; barbers: BarberLis
                         <Pencil className="size-4" />
                         Editar
                       </Link>
-                      <form action={toggleBarberActiveAction.bind(null, slug, b.id, !b.active)} className="flex flex-1 xl:flex-none">
+                      {b.active ? (
                         <button
-                          type="submit"
-                          title={b.active ? "Desativar profissional" : "Reativar profissional"}
+                          type="button"
+                          title="Desativar profissional"
+                          aria-expanded={confirmId === b.id}
+                          onClick={() => setConfirmId(confirmId === b.id ? null : b.id)}
                           className={cn(
                             actionBtn,
-                            "w-full cursor-pointer xl:w-10 xl:px-0",
-                            b.active
-                              ? "hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive"
-                              : "text-gold hover:bg-gold/10 focus-visible:bg-gold/10",
+                            "w-full flex-1 cursor-pointer xl:w-10 xl:flex-none xl:px-0",
+                            "hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive",
                           )}
                         >
                           <Power className="size-4" />
-                          <span className="xl:sr-only">{b.active ? "Desativar" : "Reativar"}</span>
+                          <span className="xl:sr-only">Desativar</span>
                         </button>
-                      </form>
+                      ) : (
+                        <form action={toggleBarberActiveAction.bind(null, slug, b.id, true)} className="flex flex-1 xl:flex-none">
+                          <button
+                            type="submit"
+                            title="Reativar profissional"
+                            className={cn(
+                              actionBtn,
+                              "w-full cursor-pointer xl:w-10 xl:px-0",
+                              "text-gold hover:bg-gold/10 focus-visible:bg-gold/10",
+                            )}
+                          >
+                            <Power className="size-4" />
+                            <span className="xl:sr-only">Reativar</span>
+                          </button>
+                        </form>
+                      )}
                     </div>
                   </div>
+
+                  {/* Confirmação de desativar: aparece na própria linha, sem modal. */}
+                  {b.active && confirmId === b.id ? (
+                    <div
+                      role="alertdialog"
+                      aria-label={`Desativar ${b.displayName}?`}
+                      className="relative z-10 flex flex-col gap-2 rounded-xl border border-destructive/40 bg-destructive/[0.06] px-4 py-3 xl:col-span-4"
+                    >
+                      <p className="text-sm font-medium text-cream">Desativar {b.displayName}?</p>
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        Ele some das listas, da agenda e perde o acesso ao sistema. Os dados e o histórico ficam
+                        guardados e dá para reativar depois.
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        <form action={toggleBarberActiveAction.bind(null, slug, b.id, false)}>
+                          <Button type="submit" size="sm" className="bg-destructive text-white hover:bg-destructive/85">
+                            Sim, desativar
+                          </Button>
+                        </form>
+                        <Button type="button" variant="outline" size="sm" onClick={() => setConfirmId(null)}>
+                          Voltar
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}

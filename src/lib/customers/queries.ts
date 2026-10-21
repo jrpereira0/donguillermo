@@ -18,8 +18,11 @@ const normalize = (s: string) =>
 export function searchFilter(raw: string): string | null {
   const t = raw.trim().slice(0, 60);
   if (!t) return null;
+  // `%` e `_` são curingas do LIKE: escapados com `\` para valerem como texto
+  // literal — digitar "%" ou "_" não pode trazer todos os clientes.
   const text = normalize(t)
-    .replace(/[^a-z0-9@._\- ]/g, "")
+    .replace(/[^a-z0-9@._\- %]/g, "")
+    .replace(/[%_]/g, (c) => `\\${c}`)
     .trim();
   const digits = t.replace(/\D/g, "");
   const parts: string[] = [];
