@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Mail, MessageCircle, Pencil, Phone, Power, Search, SearchX } from "lucide-react";
+import { Mail, MessageCircle, Pencil, Phone, Power, Search } from "lucide-react";
 import { toggleBarberActiveAction } from "@/app/u/[slug]/profissionais/actions";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { ActiveStatus } from "@/components/ui/status-pill";
 import { cn } from "@/lib/utils";
 import { BarberAvatar } from "./barber-avatar";
+import { EmptyState } from "./empty-state";
 
 export type BarberListItem = {
   id: string;
@@ -31,21 +33,6 @@ const normalize = (s: string) =>
 
 // Colunas em telas largas: Profissional | Contato | Status | Ações
 const COLS = "xl:grid-cols-[minmax(0,2fr)_minmax(0,2.4fr)_6.5rem_10rem]";
-
-function StatusBadge({ active, className }: { active: boolean; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-label text-[0.65rem] uppercase tracking-[0.18em]",
-        active ? "border-success/40 bg-success/10 text-success" : "border-border text-muted-foreground",
-        className,
-      )}
-    >
-      <span className={cn("size-1.5 rounded-full", active ? "bg-success" : "bg-muted-foreground/50")} aria-hidden="true" />
-      {active ? "Ativo" : "Inativo"}
-    </span>
-  );
-}
 
 /** Botão do grupo de ações: texto pequeno em caixa alta, fundo muda no hover. */
 const actionBtn =
@@ -106,14 +93,18 @@ export function BarberList({ slug, barbers }: { slug: string; barbers: BarberLis
         </div>
 
         {shown.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-            <SearchX className="size-7 text-gold" aria-hidden="true" />
-            <p className="font-heading text-base uppercase tracking-wide">Nenhum profissional encontrado</p>
-            <p className="text-sm text-muted-foreground">Confira o que foi digitado na busca.</p>
-            <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>
-              Limpar busca
-            </Button>
-          </div>
+          <EmptyState
+            framed={false}
+            size="section"
+            icon={Search}
+            title="Nenhum profissional encontrado"
+            description="Confira o que foi digitado na busca."
+            action={
+              <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>
+                Limpar busca
+              </Button>
+            }
+          />
         ) : (
           <ul className="divide-y divide-border">
             {shown.map((b) => {
@@ -137,7 +128,7 @@ export function BarberList({ slug, barbers }: { slug: string; barbers: BarberLis
                         >
                           {b.displayName}
                         </Link>
-                        <StatusBadge active={b.active} className="xl:hidden" />
+                        <ActiveStatus active={b.active} className="xl:hidden" />
                       </div>
                       <p className="truncate text-sm text-muted-foreground">
                         <span className="text-gold/90">{b.jobTitle}</span>
@@ -179,7 +170,7 @@ export function BarberList({ slug, barbers }: { slug: string; barbers: BarberLis
 
                   {/* Status (tabela) */}
                   <div className="hidden xl:block">
-                    <StatusBadge active={b.active} />
+                    <ActiveStatus active={b.active} />
                   </div>
 
                   {/* Ações: grupo segmentado (editar | ativar/desativar). Fica acima do link da linha. */}

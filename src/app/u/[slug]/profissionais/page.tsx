@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus, Users } from "lucide-react";
 import { BarberList, type BarberListItem } from "@/components/unit/barber-list";
+import { EmptyState } from "@/components/unit/empty-state";
 import { PageHeader } from "@/components/unit/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { FlashNotice } from "@/components/ui/notice";
-import { LuxeFrame } from "@/components/ui/luxe-frame";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { barberPhotoUrl } from "@/lib/barbers/photo";
 import { listBarbers } from "@/lib/barbers/queries";
@@ -51,7 +51,7 @@ export default async function ProfissionaisPage({
       <PageHeader
         eyebrow="Equipe"
         title="Profissionais"
-        description="Barbeiros da unidade, com acesso próprio ao sistema."
+        description="Profissionais da unidade."
         action={barbers.length ? newButton : undefined}
       />
 
@@ -65,20 +65,12 @@ export default async function ProfissionaisPage({
       ) : null}
 
       {barbers.length === 0 ? (
-        <LuxeFrame
-          className="reveal"
-          style={{ "--d": "150ms" } as React.CSSProperties}
-          contentClassName="flex flex-col items-center gap-4 px-6 py-12 text-center"
-        >
-          <Users className="size-8 text-gold" aria-hidden="true" />
-          <div>
-            <p className="font-heading text-lg uppercase tracking-wide">Nenhum profissional ainda</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Cadastre o primeiro barbeiro para começar a montar a agenda.
-            </p>
-          </div>
-          {newButton}
-        </LuxeFrame>
+        <EmptyState
+          icon={Users}
+          title="Nenhum profissional ainda"
+          description="Cadastre o primeiro barbeiro para começar a montar a agenda."
+          action={newButton}
+        />
       ) : (
         <BarberList slug={slug} barbers={items} />
       )}

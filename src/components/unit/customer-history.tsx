@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { Building2, CalendarClock, Receipt, ReceiptText, TrendingUp, Wallet } from "lucide-react";
-import { LuxeFrame } from "@/components/ui/luxe-frame";
 import type { CustomerHistoryEntry } from "@/lib/customers/types";
+import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { formatBRL } from "@/lib/validation/service";
-import { cn } from "@/lib/utils";
+import { EmptyState } from "./empty-state";
 import { FormSection } from "./form-parts";
 
 const dateTime = new Intl.DateTimeFormat("pt-BR", {
@@ -13,10 +13,10 @@ const dateTime = new Intl.DateTimeFormat("pt-BR", {
 });
 const dateOnly = new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeZone: "America/Sao_Paulo" });
 
-const STATUS: Record<CustomerHistoryEntry["status"], { label: string; className: string }> = {
-  aberta: { label: "Aberta", className: "border-gold/40 bg-gold/10 text-gold" },
-  fechada: { label: "Fechada", className: "border-success/40 bg-success/10 text-success" },
-  cancelada: { label: "Cancelada", className: "border-border text-muted-foreground" },
+const STATUS: Record<CustomerHistoryEntry["status"], { label: string; tone: StatusTone }> = {
+  aberta: { label: "Aberta", tone: "gold" },
+  fechada: { label: "Fechada", tone: "success" },
+  cancelada: { label: "Cancelada", tone: "muted" },
 };
 
 /** Resumo do cliente a partir das comandas FECHADAS (abertas e canceladas não entram nos totais). */
@@ -46,8 +46,7 @@ function Stat({ icon: Icon, label, value }: { icon: typeof Receipt; label: strin
 
 /**
  * Aba "Histórico": resumo e lista de comandas do cliente em TODAS as unidades da rede;
- * cada comanda mostra a unidade onde aconteceu. As comandas ainda não existem: com a lista
- * vazia aparece o estado "Nenhuma comanda ainda".
+ * cada comanda mostra a unidade onde aconteceu. Sem comandas, aparece "Nenhuma comanda ainda".
  */
 export function CustomerHistory({ entries, slug }: { entries: CustomerHistoryEntry[]; slug: string }) {
   const s = summarize(entries);
@@ -65,15 +64,12 @@ export function CustomerHistory({ entries, slug }: { entries: CustomerHistoryEnt
 
       <FormSection icon={ReceiptText} title="Comandas" description="Do atendimento mais recente para o mais antigo.">
         {entries.length === 0 ? (
-          <LuxeFrame contentClassName="flex flex-col items-center px-6 py-10 text-center">
-            <span className="flex size-14 items-center justify-center rounded-full border border-gold/40 bg-[#101010] text-gold">
-              <ReceiptText className="size-6" aria-hidden="true" />
-            </span>
-            <p className="mt-5 font-heading text-lg uppercase tracking-wide">Nenhuma comanda ainda</p>
-            <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              Quando este cliente for atendido, as comandas aparecem aqui com a unidade, o profissional, os itens e o valor.
-            </p>
-          </LuxeFrame>
+          <EmptyState
+            size="section"
+            icon={ReceiptText}
+            title="Nenhuma comanda ainda"
+            description="Quando este cliente for atendido, as comandas aparecem aqui com a unidade, o profissional, os itens e o valor."
+          />
         ) : (
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
             {entries.map((e) => (
@@ -94,14 +90,7 @@ export function CustomerHistory({ entries, slug }: { entries: CustomerHistoryEnt
                   {e.items.length ? <p className="text-sm text-muted-foreground">{e.items.join(", ")}</p> : null}
                 </div>
                 <div className="flex items-center gap-4">
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full border px-2.5 py-0.5 font-label text-[0.65rem] uppercase tracking-[0.18em]",
-                      STATUS[e.status].className,
-                    )}
-                  >
-                    {STATUS[e.status].label}
-                  </span>
+                  <StatusPill tone={STATUS[e.status].tone}>{STATUS[e.status].label}</StatusPill>
                   <span className="font-heading text-base font-semibold tracking-wide">{formatBRL(e.totalCents)}</span>
                 </div>
               </li>

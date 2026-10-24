@@ -10,9 +10,9 @@ import {
 import { FormAlert } from "@/components/auth/form-alert";
 import { FieldError } from "@/components/auth/form-alert";
 import { Button } from "@/components/ui/button";
-import { LuxeFrame } from "@/components/ui/luxe-frame";
 import { Notice } from "@/components/ui/notice";
 import { Textarea } from "@/components/ui/textarea";
+import { EmptyState } from "./empty-state";
 import { initialCustomerState, type CustomerFormState, type CustomerNote } from "@/lib/customers/types";
 import { cn } from "@/lib/utils";
 import { FormSection } from "./form-parts";
@@ -248,15 +248,12 @@ export function CustomerNotes({ slug, customerId, notes }: { slug: string; custo
         description="Da mais recente para a mais antiga."
       >
         {notes.length === 0 ? (
-          <LuxeFrame contentClassName="flex flex-col items-center px-6 py-10 text-center">
-            <span className="flex size-14 items-center justify-center rounded-full border border-gold/40 bg-[#101010] text-gold">
-              <NotebookPen className="size-6" aria-hidden="true" />
-            </span>
-            <p className="mt-5 font-heading text-lg uppercase tracking-wide">Nenhuma observação ainda</p>
-            <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              Anote o que ajuda a atender melhor este cliente: gostos, cuidados, combinados.
-            </p>
-          </LuxeFrame>
+          <EmptyState
+            size="section"
+            icon={NotebookPen}
+            title="Nenhuma observação ainda"
+            description="Anote o que ajuda a atender melhor este cliente: gostos, cuidados, combinados."
+          />
         ) : (
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
             {notes.map((n) => (

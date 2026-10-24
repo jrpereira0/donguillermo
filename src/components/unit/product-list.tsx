@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Package, Pencil, Power, Search, SearchX } from "lucide-react";
+import { Pencil, Power, Search } from "lucide-react";
 import { toggleProductActiveAction } from "@/app/u/[slug]/produtos/actions";
 import { Button } from "@/components/ui/button";
+import { ProductIcon } from "./product-icon";
+import { ActiveStatus } from "@/components/ui/status-pill";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "./empty-state";
 
 export type ProductListItem = {
   id: string;
   name: string;
   description: string | null;
+  category: string;
   categoryLabel: string;
   priceLabel: string;
   active: boolean;
@@ -23,21 +27,6 @@ const normalize = (s: string) =>
     .toLowerCase();
 
 const COLS = "xl:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_8rem_6.5rem_10rem]";
-
-function StatusBadge({ active, className }: { active: boolean; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-label text-[0.65rem] uppercase tracking-[0.18em]",
-        active ? "border-success/40 bg-success/10 text-success" : "border-border text-muted-foreground",
-        className,
-      )}
-    >
-      <span className={cn("size-1.5 rounded-full", active ? "bg-success" : "bg-muted-foreground/50")} aria-hidden="true" />
-      {active ? "Ativo" : "Inativo"}
-    </span>
-  );
-}
 
 const actionBtn =
   "inline-flex h-10 items-center justify-center gap-2 px-4 font-label text-[0.7rem] uppercase tracking-[0.16em] text-muted-foreground outline-none transition-colors xl:h-9";
@@ -79,14 +68,18 @@ export function ProductList({ slug, products }: { slug: string; products: Produc
         </div>
 
         {shown.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-            <SearchX className="size-7 text-gold" aria-hidden="true" />
-            <p className="font-heading text-base uppercase tracking-wide">Nenhum produto encontrado</p>
-            <p className="text-sm text-muted-foreground">Confira o que foi digitado na busca.</p>
-            <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>
-              Limpar busca
-            </Button>
-          </div>
+          <EmptyState
+            framed={false}
+            size="section"
+            icon={Search}
+            title="Nenhum produto encontrado"
+            description="Confira o que foi digitado na busca."
+            action={
+              <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>
+                Limpar busca
+              </Button>
+            }
+          />
         ) : (
           <ul className="divide-y divide-border">
             {shown.map((p) => (
@@ -99,7 +92,7 @@ export function ProductList({ slug, products }: { slug: string; products: Produc
               >
                 <div className={cn("flex min-w-0 items-center gap-3", !p.active && "opacity-60")}>
                   <span className="flex size-14 shrink-0 items-center justify-center rounded-xl border border-gold/25 bg-gold/10 text-gold">
-                    <Package className="size-5" aria-hidden="true" />
+                    <ProductIcon category={p.category} className="size-5" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
@@ -109,7 +102,7 @@ export function ProductList({ slug, products }: { slug: string; products: Produc
                       >
                         {p.name}
                       </Link>
-                      <StatusBadge active={p.active} className="xl:hidden" />
+                      <ActiveStatus active={p.active} className="xl:hidden" />
                     </div>
                     {p.description ? (
                       <p className="truncate text-sm text-muted-foreground">{p.description}</p>
@@ -126,7 +119,7 @@ export function ProductList({ slug, products }: { slug: string; products: Produc
                 </span>
 
                 <div className="hidden xl:block">
-                  <StatusBadge active={p.active} />
+                  <ActiveStatus active={p.active} />
                 </div>
 
                 <div className="relative z-10 flex xl:justify-end">

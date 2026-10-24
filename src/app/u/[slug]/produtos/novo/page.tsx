@@ -18,7 +18,7 @@ export default async function NovoProdutoPage({ params }: { params: Promise<{ sl
         <ArrowLeft className="size-3.5" />
         Produtos
       </Link>
-      <PageHeader eyebrow="Catálogo" title="Novo produto" description="Cadastre o nome, a categoria e o preço." />
+      <PageHeader eyebrow="Catálogo" title="Novo produto" description="Cadastre um novo produto." />
       <ProductForm mode="create" slug={slug} defaults={EMPTY_PRODUCT_DEFAULTS} />
     </div>
   );

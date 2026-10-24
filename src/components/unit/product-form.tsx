@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useActionState } from "react";
-import { ArrowRight, ClipboardList, Loader2, Package, Power, Wallet } from "lucide-react";
+import { ArrowRight, ClipboardList, Loader2, Power, Wallet } from "lucide-react";
 import { createProductAction, updateProductAction } from "@/app/u/[slug]/produtos/actions";
 import { FormAlert } from "@/components/auth/form-alert";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -12,7 +12,8 @@ import { Notice } from "@/components/ui/notice";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { initialProductState } from "@/lib/products/types";
-import { PRODUCT_CATEGORIES } from "@/lib/validation/product";
+import { PRODUCT_CATEGORY_OPTIONS } from "./product-categories";
+import { ProductIcon } from "./product-icon";
 import { formatBRL, maskMoney, moneyToCents, priceProblem } from "@/lib/validation/service";
 import { Field, FormSection } from "./form-parts";
 import { TabList, type TabDef } from "./tab-list";
@@ -33,7 +34,7 @@ export const EMPTY_PRODUCT_DEFAULTS: ProductDefaults = {
 
 type TabId = "dados" | "preco" | "situacao";
 
-const CATEGORY_OPTIONS = PRODUCT_CATEGORIES.map((c) => ({ value: c.value, label: c.label }));
+const CATEGORY_OPTIONS = PRODUCT_CATEGORY_OPTIONS;
 
 function tabOf(field: string): TabId {
   return field === "price" ? "preco" : "dados";
@@ -190,7 +191,7 @@ export function ProductForm({
               </Field>
               <div className="flex items-center gap-4 rounded-xl border border-dashed border-border bg-[#0b0b0b]/40 px-4 py-3.5" aria-live="polite">
                 <span className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-gold/30 bg-gold/10 text-gold">
-                  <Package className="size-5" aria-hidden="true" />
+                  <ProductIcon category={category} className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-heading text-base font-semibold uppercase tracking-wide">

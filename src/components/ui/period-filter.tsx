@@ -53,28 +53,39 @@ export function PeriodFilter({
   className?: string;
 }) {
   const [draft, setDraft] = useState<PeriodValue>(value);
+  // O que já foi pedido. Atualiza na hora do clique, sem esperar a página
+  // recarregar — senão o atalho perde o dourado e o botão Aplicar pisca.
+  const [applied, setApplied] = useState<PeriodValue>(value);
 
   useEffect(() => {
     setDraft(value);
+    setApplied(value);
   }, [value.from, value.to]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const dirty = draft.from !== value.from || draft.to !== value.to;
+  const dirty = draft.from !== applied.from || draft.to !== applied.to;
+  const shown = dirty ? draft : applied;
   const activePreset = dirty
     ? undefined
-    : presets.find((p) => p.from === value.from && p.to === value.to);
+    : presets.find((p) => p.from === applied.from && p.to === applied.to);
 
-  const sameYear = value.from.slice(0, 4) === value.to.slice(0, 4);
+  const sameYear = !shown.from || !shown.to || shown.from.slice(0, 4) === shown.to.slice(0, 4);
   const summary =
-    !value.from && !value.to
+    !shown.from && !shown.to
       ? "Todo o período"
-      : !value.from
-        ? `Até ${fmtIso(value.to)}`
-        : !value.to
-          ? `A partir de ${fmtIso(value.from)}`
-          : value.from === value.to
-            ? fmtIso(value.from)
-            : `${fmtIso(value.from, !sameYear)} — ${fmtIso(value.to)}`;
-  const days = value.from && value.to ? inclusiveDays(value.from, value.to) : null;
+      : !shown.from
+        ? `Até ${fmtIso(shown.to)}`
+        : !shown.to
+          ? `A partir de ${fmtIso(shown.from)}`
+          : shown.from === shown.to
+            ? fmtIso(shown.from)
+            : `${fmtIso(shown.from, !sameYear)} — ${fmtIso(shown.to)}`;
+  const days = shown.from && shown.to ? inclusiveDays(shown.from, shown.to) : null;
+
+  function commit(next: PeriodValue) {
+    setDraft(next);
+    setApplied(next);
+    onApply(next);
+  }
 
   function pick(which: "from" | "to", iso: string) {
     let next: PeriodValue =
@@ -83,7 +94,7 @@ export function PeriodFilter({
       next = which === "from" ? { from: iso, to: iso } : { from: iso, to: iso };
     }
     setDraft(next);
-    if (instant) onApply(next);
+    if (instant) commit(next);
   }
 
   return (
@@ -96,8 +107,8 @@ export function PeriodFilter({
         className,
       )}
     >
-      {/* Linha 1 — esquerda: resumo do período */}
-      <div className="flex min-w-0 flex-1 items-center gap-3 min-[1400px]:flex-none">
+      {/* Linha 1 — esquerda: resumo do período. Largura fixa na linha única para os atalhos não escorregarem. */}
+      <div className="flex min-w-0 flex-1 items-center gap-3 min-[1400px]:w-[18.5rem] min-[1400px]:flex-none">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-gold/30 bg-gold/10 text-gold">
           <CalendarRange className="size-4" aria-hidden="true" />
         </span>
@@ -116,7 +127,7 @@ export function PeriodFilter({
       </div>
 
       {/* Linha 1 — direita: intervalo personalizado */}
-      <div className="order-2 flex flex-wrap items-center gap-2 min-[1400px]:order-3">
+      <div className="order-2 flex shrink-0 flex-wrap items-center gap-2 min-[1400px]:order-3">
         <div className="w-[9.25rem]">
           <AgendaDateField
             id={fromId}
@@ -139,7 +150,7 @@ export function PeriodFilter({
           />
         </div>
         {!instant && dirty ? (
-          <Button type="button" variant="luxe" className="h-9 px-4 text-[0.68rem]" onClick={() => onApply(draft)}>
+          <Button type="button" variant="luxe" className="h-9 px-4 text-[0.68rem]" onClick={() => commit(draft)}>
             <Check aria-hidden="true" />
             Aplicar
           </Button>
@@ -159,10 +170,7 @@ export function PeriodFilter({
               key={p.label}
               type="button"
               aria-pressed={active}
-              onClick={() => {
-                setDraft({ from: p.from, to: p.to });
-                onApply({ from: p.from, to: p.to });
-              }}
+              onClick={() => commit({ from: p.from, to: p.to })}
               className={cn(
                 "label-caps h-8 flex-1 cursor-pointer rounded-md px-2.5 text-[0.6rem] whitespace-nowrap transition-colors min-[1400px]:flex-none min-[1400px]:px-3",
                 active

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Building2, Globe, Pencil, Power, Store } from "lucide-react";
 import { toggleCustomerActiveAction } from "@/app/u/[slug]/clientes/actions";
+import { ActiveStatus } from "@/components/ui/status-pill";
 import { cn } from "@/lib/utils";
 import { maskPhone } from "@/lib/validation/barber";
 import { BarberAvatar } from "./barber-avatar";
@@ -21,21 +22,6 @@ export type CustomerListItem = {
 
 // Colunas em telas largas: Cliente | Contato | Cadastro | Status | Ações
 const COLS = "xl:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_minmax(0,1.6fr)_6.5rem_10rem]";
-
-function StatusBadge({ active, className }: { active: boolean; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-label text-[0.65rem] uppercase tracking-[0.18em]",
-        active ? "border-success/40 bg-success/10 text-success" : "border-border text-muted-foreground",
-        className,
-      )}
-    >
-      <span className={cn("size-1.5 rounded-full", active ? "bg-success" : "bg-muted-foreground/50")} aria-hidden="true" />
-      {active ? "Ativo" : "Inativo"}
-    </span>
-  );
-}
 
 const actionBtn =
   "inline-flex h-10 items-center justify-center gap-2 px-4 font-label text-[0.7rem] uppercase tracking-[0.16em] text-muted-foreground outline-none transition-colors xl:h-9";
@@ -76,7 +62,7 @@ export function CustomerList({ slug, customers }: { slug: string; customers: Cus
                   >
                     {c.name}
                   </Link>
-                  <StatusBadge active={c.active} className="xl:hidden" />
+                  <ActiveStatus active={c.active} className="xl:hidden" />
                 </div>
               </div>
             </div>
@@ -102,7 +88,7 @@ export function CustomerList({ slug, customers }: { slug: string; customers: Cus
             </div>
 
             <div className="hidden xl:block">
-              <StatusBadge active={c.active} />
+              <ActiveStatus active={c.active} />
             </div>
 
             <div className="relative z-10 flex xl:justify-end">

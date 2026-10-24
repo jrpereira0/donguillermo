@@ -53,7 +53,7 @@ export default async function ConfiguracoesPage({
       <PageHeader
         eyebrow="Unidade"
         title="Configurações"
-        description="Dados da barbearia: marca, contato, horário de funcionamento e tempo da agenda."
+        description="Dados e horários da unidade."
       />
       <UnitSettingsForm slug={slug} unitId={settings.id} defaults={defaults} serviceDurations={durations} />
     </div>

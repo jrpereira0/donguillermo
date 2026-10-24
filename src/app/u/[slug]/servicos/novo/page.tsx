@@ -20,7 +20,7 @@ export default async function NovoServicoPage({ params }: { params: Promise<{ sl
         <ArrowLeft className="size-3.5" />
         Serviços
       </Link>
-      <PageHeader eyebrow="Catálogo" title="Novo serviço" description="Cadastre o nome, o preço e a duração do serviço." />
+      <PageHeader eyebrow="Catálogo" title="Novo serviço" description="Cadastre um novo serviço." />
       <ServiceForm mode="create" slug={slug} unitId={unit.id} barbers={barbers} serviceId={crypto.randomUUID()} defaults={EMPTY_SERVICE_DEFAULTS} />
     </div>
   );

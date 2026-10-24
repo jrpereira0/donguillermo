@@ -10,7 +10,7 @@ export const instant = false;
 
 export default async function NovoClientePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { unit } = await requireUnitArea(slug, "clientes");
+  await requireUnitArea(slug, "clientes");
   // O id nasce aqui para a foto já ter nome de arquivo antes de o cadastro existir.
   const customerId = crypto.randomUUID();
 
@@ -23,7 +23,7 @@ export default async function NovoClientePage({ params }: { params: Promise<{ sl
       <PageHeader
         eyebrow="Relacionamento"
         title="Novo cliente"
-        description={`Será registrado como cliente da rede, com origem em ${unit.name}. Só o nome e o telefone são obrigatórios.`}
+        description="Cadastre um novo cliente."
       />
       <CustomerForm
         mode="create"

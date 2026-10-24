@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Package, Plus } from "lucide-react";
+import { EmptyState } from "@/components/unit/empty-state";
 import { PageHeader } from "@/components/unit/page-header";
+import { ProductIcon } from "@/components/unit/product-icon";
 import { ProductList, type ProductListItem } from "@/components/unit/product-list";
 import { buttonVariants } from "@/components/ui/button";
-import { LuxeFrame } from "@/components/ui/luxe-frame";
 import { FlashNotice } from "@/components/ui/notice";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { listProducts } from "@/lib/products/queries";
@@ -31,6 +32,7 @@ export default async function ProdutosPage({
     id: p.id,
     name: p.name,
     description: p.description,
+    category: p.category,
     categoryLabel: productCategoryLabel(p.category),
     priceLabel: formatBRL(p.price_cents),
     active: p.is_active,
@@ -55,31 +57,27 @@ export default async function ProdutosPage({
       {aviso === "criado" ? <FlashNotice title="Produto cadastrado">Ele já pode ser vendido na comanda.</FlashNotice> : null}
 
       {products.length === 0 ? (
-        <LuxeFrame
-          className="reveal"
-          style={{ "--d": "150ms" } as React.CSSProperties}
-          contentClassName="flex flex-col items-center px-6 py-12 text-center sm:py-14"
+        <EmptyState
+          icon={Package}
+          title="Monte o catálogo da unidade"
+          description="Cadastre pomadas, óleos e o que a recepção vende. O preço entra direto na comanda."
+          action={newButton}
         >
-          <span className="relative flex size-16 items-center justify-center rounded-full border border-gold/40 bg-[#101010] text-gold shadow-[0_0_32px_rgb(192_160_98/0.2)]">
-            <Package className="size-7" aria-hidden="true" />
-          </span>
-          <p className="mt-6 font-heading text-xl uppercase tracking-wide">Monte o catálogo da unidade</p>
-          <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            Cadastre pomadas, óleos e o que a recepção vende. O preço entra direto na comanda.
-          </p>
-          <div className="mt-6 w-full sm:w-auto">{newButton}</div>
-
           <div className="mt-9 flex w-full max-w-xl flex-col items-center gap-3 border-t border-border pt-6">
             <span className="label-caps text-[0.65rem]">Categorias disponíveis</span>
             <ul className="flex flex-wrap justify-center gap-2">
               {PRODUCT_CATEGORIES.map((c) => (
-                <li key={c.value} className="inline-flex items-center gap-2 rounded-full border border-border bg-black/20 px-3.5 py-1.5 text-sm text-muted-foreground">
+                <li
+                  key={c.value}
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-black/20 px-3.5 py-1.5 text-sm text-muted-foreground"
+                >
+                  <ProductIcon category={c.value} className="size-3.5 text-gold" />
                   {c.label}
                 </li>
               ))}
             </ul>
           </div>
-        </LuxeFrame>
+        </EmptyState>
       ) : (
         <ProductList slug={slug} products={items} />
       )}

@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus, Scissors } from "lucide-react";
+import { EmptyState } from "@/components/unit/empty-state";
 import { PageHeader } from "@/components/unit/page-header";
 import { ServiceIcon } from "@/components/unit/service-icon";
 import { ServiceList, type ServiceListItem } from "@/components/unit/service-list";
 import { buttonVariants } from "@/components/ui/button";
-import { LuxeFrame } from "@/components/ui/luxe-frame";
 import { FlashNotice } from "@/components/ui/notice";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { serviceImageUrl } from "@/lib/services/image";
@@ -74,20 +74,12 @@ export default async function ServicosPage({
       ) : null}
 
       {services.length === 0 ? (
-        <LuxeFrame
-          className="reveal"
-          style={{ "--d": "150ms" } as React.CSSProperties}
-          contentClassName="flex flex-col items-center px-6 py-12 text-center sm:py-14"
+        <EmptyState
+          icon={Scissors}
+          title="Monte o catálogo da unidade"
+          description="Cadastre os serviços com preço e duração. É com eles que a agenda calcula horários e valores."
+          action={newButton}
         >
-          <span className="relative flex size-16 items-center justify-center rounded-full border border-gold/40 bg-[#101010] text-gold shadow-[0_0_32px_rgb(192_160_98/0.2)]">
-            <Scissors className="size-7" aria-hidden="true" />
-          </span>
-          <p className="mt-6 font-heading text-xl uppercase tracking-wide">Monte o catálogo da unidade</p>
-          <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            Cadastre os serviços com preço e duração. É com eles que a agenda calcula horários e valores.
-          </p>
-          <div className="mt-6 w-full sm:w-auto">{newButton}</div>
-
           <div className="mt-9 flex w-full max-w-xl flex-col items-center gap-3 border-t border-border pt-6">
             <span className="label-caps text-[0.65rem]">Categorias disponíveis</span>
             <ul className="flex flex-wrap justify-center gap-2">
@@ -102,7 +94,7 @@ export default async function ServicosPage({
               ))}
             </ul>
           </div>
-        </LuxeFrame>
+        </EmptyState>
       ) : (
         <ServiceList slug={slug} services={items} />
       )}

@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Clock, Pencil, Power, Search, SearchX } from "lucide-react";
+import { Clock, Pencil, Power, Search } from "lucide-react";
 import { toggleServiceActiveAction } from "@/app/u/[slug]/servicos/actions";
 import { Button } from "@/components/ui/button";
+import { ActiveStatus } from "@/components/ui/status-pill";
 import { cn } from "@/lib/utils";
 import { BarberAvatar } from "./barber-avatar";
+import { EmptyState } from "./empty-state";
 import { ServiceThumb } from "./service-icon";
 
 export type ServiceListItem = {
@@ -34,21 +36,6 @@ const normalize = (s: string) =>
 
 // Colunas em telas largas: Serviço | Categoria | Duração | Preço | Profissionais | Status | Ações
 const COLS = "xl:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_5.5rem_6.5rem_8.5rem_6.5rem_10rem]";
-
-function StatusBadge({ active, className }: { active: boolean; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-label text-[0.65rem] uppercase tracking-[0.18em]",
-        active ? "border-success/40 bg-success/10 text-success" : "border-border text-muted-foreground",
-        className,
-      )}
-    >
-      <span className={cn("size-1.5 rounded-full", active ? "bg-success" : "bg-muted-foreground/50")} aria-hidden="true" />
-      {active ? "Ativo" : "Inativo"}
-    </span>
-  );
-}
 
 /** Fotos sobrepostas de quem faz o serviço (até 3, com "+N" para o resto). */
 function BarberStack({ barbers }: { barbers: ServiceListItem["barbers"] }) {
@@ -128,14 +115,18 @@ export function ServiceList({ slug, services }: { slug: string; services: Servic
         </div>
 
         {shown.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-            <SearchX className="size-7 text-gold" aria-hidden="true" />
-            <p className="font-heading text-base uppercase tracking-wide">Nenhum serviço encontrado</p>
-            <p className="text-sm text-muted-foreground">Confira o que foi digitado na busca.</p>
-            <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>
-              Limpar busca
-            </Button>
-          </div>
+          <EmptyState
+            framed={false}
+            size="section"
+            icon={Search}
+            title="Nenhum serviço encontrado"
+            description="Confira o que foi digitado na busca."
+            action={
+              <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>
+                Limpar busca
+              </Button>
+            }
+          />
         ) : (
           <ul className="divide-y divide-border">
             {shown.map((s) => {
@@ -158,7 +149,7 @@ export function ServiceList({ slug, services }: { slug: string; services: Servic
                         >
                           {s.name}
                         </Link>
-                        <StatusBadge active={s.active} className="xl:hidden" />
+                        <ActiveStatus active={s.active} className="xl:hidden" />
                       </div>
                       {s.description ? (
                         <p className="truncate text-sm text-muted-foreground">{s.description}</p>
@@ -185,7 +176,7 @@ export function ServiceList({ slug, services }: { slug: string; services: Servic
 
                   {/* Status (tabela) */}
                   <div className="hidden xl:block">
-                    <StatusBadge active={s.active} />
+                    <ActiveStatus active={s.active} />
                   </div>
 
                   {/* Ações: grupo segmentado (editar | ativar/desativar). Fica acima do link da linha. */}

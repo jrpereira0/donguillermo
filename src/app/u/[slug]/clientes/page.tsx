@@ -3,9 +3,9 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, Plus, SearchX, UsersRound } from "lucide-react";
 import { CustomerList, type CustomerListItem } from "@/components/unit/customer-list";
 import { CustomerSearch } from "@/components/unit/customer-search";
+import { EmptyState } from "@/components/unit/empty-state";
 import { PageHeader } from "@/components/unit/page-header";
 import { buttonVariants } from "@/components/ui/button";
-import { LuxeFrame } from "@/components/ui/luxe-frame";
 import { FlashNotice } from "@/components/ui/notice";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { CUSTOMERS_PAGE_SIZE, listCustomers, listNetworkUnitNames } from "@/lib/customers/queries";
@@ -65,44 +65,37 @@ export default async function ClientesPage({
       <PageHeader
         eyebrow="Relacionamento"
         title="Clientes"
-        description="Cadastro único da rede: o cliente é o mesmo em todas as unidades."
+        description="Todos os clientes da rede."
         action={emptyNetwork ? undefined : newButton}
       />
 
       {aviso === "criado" ? <FlashNotice title="Cliente cadastrado">Ele já pode ser encontrado pela busca.</FlashNotice> : null}
 
       {emptyNetwork ? (
-        <LuxeFrame
-          className="reveal"
-          style={{ "--d": "150ms" } as React.CSSProperties}
-          contentClassName="flex flex-col items-center px-6 py-12 text-center sm:py-14"
-        >
-          <span className="relative flex size-16 items-center justify-center rounded-full border border-gold/40 bg-[#101010] text-gold shadow-[0_0_32px_rgb(192_160_98/0.2)]">
-            <UsersRound className="size-7" aria-hidden="true" />
-          </span>
-          <p className="mt-6 font-heading text-xl uppercase tracking-wide">Cadastre o primeiro cliente</p>
-          <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            Com o cadastro, a recepção agenda mais rápido e acompanha o histórico de atendimentos em todas as unidades.
-          </p>
-          <div className="mt-6 w-full sm:w-auto">{newButton}</div>
-        </LuxeFrame>
+        <EmptyState
+          icon={UsersRound}
+          title="Cadastre o primeiro cliente"
+          description="Com o cadastro, a recepção agenda mais rápido e acompanha o histórico de atendimentos em todas as unidades."
+          action={newButton}
+        />
       ) : (
         <div className="flex flex-col gap-4">
           <CustomerSearch slug={slug} initial={query} />
 
           {items.length === 0 ? (
-            <LuxeFrame contentClassName="flex flex-col items-center gap-3 px-6 py-12 text-center">
-              <SearchX className="size-7 text-gold" aria-hidden="true" />
-              <p className="font-heading text-base uppercase tracking-wide">Nenhum cliente encontrado</p>
-              <p className="text-sm text-muted-foreground">
-                {query ? "Confira o que foi digitado na busca." : "Esta página não tem clientes."}
-              </p>
-              {query ? (
-                <Link href={base} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                  Limpar busca
-                </Link>
-              ) : null}
-            </LuxeFrame>
+            <EmptyState
+              size="section"
+              icon={SearchX}
+              title="Nenhum cliente encontrado"
+              description={query ? "Confira o que foi digitado na busca." : "Esta página não tem clientes."}
+              action={
+                query ? (
+                  <Link href={base} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                    Limpar busca
+                  </Link>
+                ) : undefined
+              }
+            />
           ) : (
             <CustomerList slug={slug} customers={items} />
           )}
