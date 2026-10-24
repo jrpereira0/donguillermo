@@ -79,9 +79,9 @@ export default async function CaixaPage({
         description={
           register
             ? showHistory
-              ? "Fechamentos anteriores desta unidade. Toque em um dia para ver comandas, conferência e alterações."
-              : `Aberto por ${register.openedByName ?? "recepção"} · fundo conferido na abertura.`
-            : "Abra o caixa para receber as comandas do dia. Enquanto isso, o histórico de fechamentos fica logo abaixo."
+              ? "Fechamentos anteriores desta unidade."
+              : `Aberto por ${register.openedByName ?? "recepção"}.`
+            : "Abra o caixa para receber as comandas."
         }
       />
       {tabs}

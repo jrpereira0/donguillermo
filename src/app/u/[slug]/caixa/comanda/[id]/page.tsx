@@ -6,9 +6,9 @@ import { cancelTicketAction, salePackageOptions, usablePackages } from "../../ac
 import { TicketEditor } from "@/components/caixa/ticket-editor";
 import { PageHeader } from "@/components/unit/page-header";
 import { ConfirmSubmitForm } from "@/components/ui/confirm-submit-form";
+import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { getOpenRegister, getTicket, listCatalog } from "@/lib/caixa/queries";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Comanda" };
 export const instant = false;
@@ -16,11 +16,11 @@ export const instant = false;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const timeFmt = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 
-const STATUS = {
-  aberta: { label: "Aberta", classes: "border-amber-300/40 bg-amber-300/10 text-amber-200", dot: "bg-amber-300" },
-  fechada: { label: "Paga", classes: "border-success/40 bg-success/10 text-emerald-200", dot: "bg-success" },
-  cancelada: { label: "Cancelada", classes: "border-border bg-black/30 text-muted-foreground", dot: "bg-muted-foreground" },
-} as const;
+const STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  aberta: { label: "Aberta", tone: "gold" },
+  fechada: { label: "Paga", tone: "success" },
+  cancelada: { label: "Cancelada", tone: "muted" },
+};
 
 export default async function ComandaPage({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
@@ -48,15 +48,9 @@ export default async function ComandaPage({ params }: { params: Promise<{ slug: 
           <ArrowLeft className="size-3.5" />
           Caixa
         </Link>
-        <span
-          className={cn(
-            "ml-auto inline-flex items-center gap-2 rounded-full border px-3 py-1 font-label text-[0.65rem] uppercase tracking-[0.18em]",
-            status.classes,
-          )}
-        >
-          <span className={cn("size-1.5 rounded-full", status.dot)} aria-hidden="true" />
+        <StatusPill tone={status.tone} dot className="ml-auto">
           {status.label}
-        </span>
+        </StatusPill>
         {ticket.customerId ? (
           <Link
             href={`/u/${slug}/clientes/${ticket.customerId}`}
@@ -82,10 +76,10 @@ export default async function ComandaPage({ params }: { params: Promise<{ slug: 
         title={ticket.customerName}
         description={
           ticket.status === "aberta"
-            ? `Aberta às ${timeFmt.format(new Date(ticket.openedAt))} · ${ticket.barberName ?? "sem profissional"}. Lance os itens, confira a cobrança e receba.`
+            ? `Aberta às ${timeFmt.format(new Date(ticket.openedAt))} · ${ticket.barberName ?? "sem profissional"}.`
             : ticket.status === "fechada"
-              ? "Comanda já recebida. O lançamento fica no histórico do caixa."
-              : "Comanda cancelada. Os itens ficam só para consulta."
+              ? "Comanda já recebida."
+              : "Comanda cancelada."
         }
         action={
           ticket.status === "aberta" ? (
@@ -95,7 +89,7 @@ export default async function ComandaPage({ params }: { params: Promise<{ slug: 
               title="Cancelar esta comanda?"
               description="Os itens lançados serão descartados e a comanda sai das abertas. Isso não tem volta."
               confirmLabel="Sim, cancelar comanda"
-              className="hover:border-destructive/60 hover:text-rose-300"
+              className="hover:border-destructive/60 hover:text-destructive"
             />
           ) : null
         }

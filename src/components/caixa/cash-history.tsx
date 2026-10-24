@@ -99,10 +99,10 @@ export function CashHistoryPanel({ slug, history }: { slug: string; history: Clo
                       className={cn(
                         "label-caps rounded-full border px-2.5 py-1 text-[0.6rem]",
                         diff === 0
-                          ? "border-emerald-300/40 bg-emerald-300/10 text-emerald-200"
+                          ? "border-success/40 bg-success/10 text-success"
                           : diff > 0
-                            ? "border-amber-300/40 bg-amber-300/10 text-amber-200"
-                            : "border-rose-300/40 bg-rose-300/10 text-rose-200",
+                            ? "border-gold/40 bg-gold/10 text-gold"
+                            : "border-destructive/40 bg-destructive/10 text-destructive",
                       )}
                     >
                       {diff === 0 ? "Bateu" : diff > 0 ? `Sobra +${formatBRL(diff)}` : `Falta −${formatBRL(-diff)}`}

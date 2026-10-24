@@ -22,7 +22,7 @@ import {
 import { PageHeader } from "@/components/unit/page-header";
 import { ReopenRegisterButton } from "@/components/caixa/reopen-register-button";
 import { requireUnitArea } from "@/lib/auth/guards";
-import { getClosedRegister, getOpenRegister, listClosedRegisters, listRegisterEvents, listRegisterMovements, listRegisterPayments, listRegisterTickets } from "@/lib/caixa/queries";
+import { getClosedRegister, getOpenRegister, listClosedRegisters, listDayPayments, listDayTickets, listRegisterEvents, listRegisterMovements } from "@/lib/caixa/queries";
 import { PAY_METHODS, payMethodLabel, type PayMethod } from "@/lib/caixa/math";
 import { formatBRL } from "@/lib/validation/service";
 import { cn } from "@/lib/utils";
@@ -84,7 +84,7 @@ function Kpi({
   label: string;
   value: string;
   hint?: string;
-  accent?: "gold" | "cream" | "success" | "amber" | "rose";
+  accent?: "gold" | "cream" | "success" | "danger";
 }) {
   return (
     <div className="rounded-2xl border border-border bg-gradient-to-b from-[#262626]/85 to-[#161616]/90 px-4 py-4 shadow-[inset_0_1px_0_rgb(242_237_228/0.06)]">
@@ -93,9 +93,8 @@ function Kpi({
         className={cn(
           "mt-1.5 font-heading text-[1.55rem] font-semibold leading-none tabular-nums",
           accent === "gold" && "text-gold",
-          accent === "success" && "text-emerald-300",
-          accent === "amber" && "text-amber-200",
-          accent === "rose" && "text-rose-300",
+          accent === "success" && "text-success",
+          accent === "danger" && "text-destructive",
           (!accent || accent === "cream") && "text-cream",
         )}
       >
@@ -112,10 +111,12 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
   const { unit } = await requireUnitArea(slug, "caixa");
   const register = await getClosedRegister(unit.id, id);
   if (!register) notFound();
+  // Comandas e formas de pagamento são do DIA do atendimento (podem ter sido
+  // recebidas depois); movimentos e conferência são deste caixa.
   const [methods, movements, tickets, openRegister, closedList, events] = await Promise.all([
-    listRegisterPayments(id),
+    listDayPayments(unit.id, register.businessDate),
     listRegisterMovements(id),
-    listRegisterTickets(id),
+    listDayTickets(unit.id, register.businessDate),
     getOpenRegister(unit.id),
     listClosedRegisters(unit.id),
     listRegisterEvents(id),
@@ -139,7 +140,7 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
       <PageHeader
         eyebrow="Financeiro · caixa do dia"
         title={bizLong.format(new Date(`${register.businessDate}T12:00:00`))}
-        description={`Data de referência: ${bizShort.format(new Date(`${register.businessDate}T12:00:00`))}. Aberto ${when.format(new Date(register.openedAt))} por ${register.openedByName ?? "recepção"} · fechado ${when.format(new Date(register.closedAt))} por ${register.closedByName ?? "recepção"}.`}
+        description={`Aberto ${when.format(new Date(register.openedAt))} por ${register.openedByName ?? "recepção"} · fechado ${when.format(new Date(register.closedAt))} por ${register.closedByName ?? "recepção"}.`}
         action={canReopen ? <ReopenRegisterButton slug={slug} registerId={register.id} /> : undefined}
       />
 
@@ -156,7 +157,7 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
           label="Diferença"
           value={diff === 0 ? formatBRL(0) : diff > 0 ? `+${formatBRL(diff)}` : `−${formatBRL(-diff)}`}
           hint={diff === 0 ? "Bateu com o esperado" : diff > 0 ? "Sobra na gaveta" : "Falta na gaveta"}
-          accent={diff === 0 ? "success" : diff > 0 ? "amber" : "rose"}
+          accent={diff === 0 ? "success" : diff > 0 ? "gold" : "danger"}
         />
       </section>
 
@@ -164,7 +165,7 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
         <div className="flex min-w-0 flex-col gap-6">
           <Panel
             icon={Receipt}
-            title="Comandas do caixa"
+            title="Comandas do dia"
             right={
               <span className="label-caps shrink-0 text-[0.62rem]">
                 {tickets.length} {tickets.length === 1 ? "comanda" : "comandas"}
@@ -172,7 +173,7 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
             }
           >
             {tickets.length === 0 ? (
-              <p className="px-5 py-6 text-sm text-muted-foreground">Nenhuma comanda recebida neste caixa.</p>
+              <p className="px-5 py-6 text-sm text-muted-foreground">Nenhuma comanda atendida neste dia.</p>
             ) : (
               <ul className="divide-y divide-border/70">
                 {tickets.map((t) => (
@@ -190,7 +191,7 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
                           {t.items.join(", ") || "Sem itens"}
                         </span>
                         <span className="mt-0.5 block text-[0.7rem] text-muted-foreground/80">
-                          {t.closedAt ? `${timeFmt.format(new Date(t.closedAt))} · ` : ""}
+                          {t.openedAt ? `${timeFmt.format(new Date(t.openedAt))} · ` : ""}
                           {t.payments
                             .map(
                               (p) =>
@@ -222,8 +223,8 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
                         className={cn(
                           "flex size-8 shrink-0 items-center justify-center rounded-lg border",
                           entrada
-                            ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-300"
-                            : "border-rose-300/30 bg-rose-300/10 text-rose-300",
+                            ? "border-success/40 bg-success/10 text-success"
+                            : "border-destructive/40 bg-destructive/10 text-destructive",
                         )}
                       >
                         {entrada ? <ArrowUpRight className="size-4" aria-hidden="true" /> : <ArrowDownRight className="size-4" aria-hidden="true" />}
@@ -236,7 +237,7 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
                           {m.authorName ? ` · ${m.authorName}` : ""}
                         </span>
                       </span>
-                      <span className={cn("shrink-0 text-sm font-medium tabular-nums", entrada ? "text-emerald-300" : "text-rose-300")}>
+                      <span className={cn("shrink-0 text-sm font-medium tabular-nums", entrada ? "text-success" : "text-destructive")}>
                         {entrada ? "+" : "−"} {formatBRL(m.amountCents)}
                       </span>
                     </li>
@@ -253,9 +254,9 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
               <ol className="flex flex-col px-4 py-4 sm:px-5">
                 {events.map((e, i) => {
                   const conf = {
-                    abertura: { icon: Unlock, label: "Caixa aberto", classes: "border-emerald-300/30 bg-emerald-300/10 text-emerald-300" },
+                    abertura: { icon: Unlock, label: "Caixa aberto", classes: "border-success/40 bg-success/10 text-success" },
                     fechamento: { icon: Lock, label: "Caixa fechado", classes: "border-gold/30 bg-gold/10 text-gold" },
-                    reabertura: { icon: RotateCcw, label: "Caixa reaberto", classes: "border-amber-300/30 bg-amber-300/10 text-amber-200" },
+                    reabertura: { icon: RotateCcw, label: "Caixa reaberto", classes: "border-gold/40 bg-gold/10 text-gold" },
                   }[e.kind];
                   const Icon = conf.icon;
                   const diffEv =
@@ -343,11 +344,11 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
               </span>
               <span className="flex justify-between gap-3 py-1 text-muted-foreground">
                 <span>Suprimentos</span>
-                <span className="tabular-nums text-emerald-300">+ {formatBRL(suprimento)}</span>
+                <span className="tabular-nums text-success">+ {formatBRL(suprimento)}</span>
               </span>
               <span className="flex justify-between gap-3 py-1 text-muted-foreground">
                 <span>Sangrias</span>
-                <span className="tabular-nums text-rose-300">− {formatBRL(sangria)}</span>
+                <span className="tabular-nums text-destructive">− {formatBRL(sangria)}</span>
               </span>
               <span className="mt-2 flex justify-between gap-3 border-t border-border/70 py-2 text-muted-foreground">
                 <span>Esperado na gaveta</span>
@@ -361,17 +362,17 @@ export default async function CaixaHistoricoDetalhePage({ params }: { params: Pr
                 className={cn(
                   "mt-3 flex items-center justify-between gap-3 rounded-xl border px-4 py-3",
                   diff === 0
-                    ? "border-emerald-300/30 bg-emerald-300/[0.07]"
+                    ? "border-success/40 bg-success/10"
                     : diff > 0
-                      ? "border-amber-300/30 bg-amber-300/[0.07]"
-                      : "border-rose-300/30 bg-rose-300/[0.07]",
+                      ? "border-gold/40 bg-gold/10"
+                      : "border-destructive/40 bg-destructive/10",
                 )}
               >
                 <span className="label-caps text-[0.62rem]">{diff === 0 ? "Bateu" : diff > 0 ? "Sobra" : "Falta"}</span>
                 <span
                   className={cn(
                     "font-heading text-xl font-semibold leading-none tabular-nums",
-                    diff === 0 ? "text-emerald-300" : diff > 0 ? "text-amber-200" : "text-rose-300",
+                    diff === 0 ? "text-success" : diff > 0 ? "text-gold" : "text-destructive",
                   )}
                 >
                   {diff === 0 ? formatBRL(0) : diff > 0 ? `+${formatBRL(diff)}` : `−${formatBRL(-diff)}`}

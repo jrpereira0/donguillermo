@@ -16,7 +16,6 @@ import type {
 
 const emptyMethods = (): MethodTotals => ({ dinheiro: 0, pix: 0, debito: 0, credito: 0 });
 
-type PayRow = { register_id: string; method: PayMethod; amount_cents: number };
 type ItemRow = {
   name: string;
   quantity: number;
@@ -206,6 +205,50 @@ export async function listRegisterTickets(registerId: string): Promise<CashTicke
   return (data ?? []).map(toTicket);
 }
 
+/**
+ * Totais por forma das vendas de um DIA de atendimento (attended_on), tenham
+ * sido recebidas nele ou depois. É a visão do histórico/faturamento por dia;
+ * a gaveta física continua em listRegisterPayments (register_id).
+ */
+export async function listDayPayments(unitId: string, day: string): Promise<MethodTotals> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ticket_payments")
+    .select("method, amount_cents, tickets!inner(id)")
+    .eq("unit_id", unitId)
+    .eq("tickets.attended_on", day)
+    .eq("tickets.status", "fechada")
+    .returns<{ method: PayMethod; amount_cents: number }[]>();
+  if (error) {
+    console.error("[caixa] day payments:", error.code);
+    return emptyMethods();
+  }
+  const totals = emptyMethods();
+  for (const p of data ?? []) {
+    if (p.method in totals) totals[p.method] += p.amount_cents;
+  }
+  return totals;
+}
+
+/** Comandas cujo atendimento foi neste dia (recebidas nele ou depois). */
+export async function listDayTickets(unitId: string, day: string): Promise<CashTicketRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("tickets")
+    .select(TICKET_LIST)
+    .eq("unit_id", unitId)
+    .eq("attended_on", day)
+    .eq("status", "fechada")
+    .order("opened_at", { ascending: false })
+    .limit(200)
+    .returns<Parameters<typeof toTicket>[0][]>();
+  if (error) {
+    console.error("[caixa] day tickets:", error.code);
+    return [];
+  }
+  return (data ?? []).map(toTicket);
+}
+
 export async function getTicket(unitId: string, id: string): Promise<TicketDetail | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -355,27 +398,36 @@ export async function listClosedRegisters(
     if (error) console.error("[caixa] history:", error.code);
     return [];
   }
-  const ids = data.map((r) => r.id);
+  // O faturamento de cada dia é o das comandas ATENDIDAS naquele dia
+  // (attended_on), mesmo recebidas depois — não o do caixa que as recebeu.
+  const days = data.map((r) => r.business_date);
   const { data: pays } = await supabase
     .from("ticket_payments")
-    .select("register_id, method, amount_cents")
-    .in("register_id", ids)
-    .returns<PayRow[]>();
-  const byReg = new Map<string, number>();
-  for (const p of pays ?? []) byReg.set(p.register_id, (byReg.get(p.register_id) ?? 0) + p.amount_cents);
+    .select("method, amount_cents, tickets!inner(id, attended_on)")
+    .eq("unit_id", unitId)
+    .eq("tickets.status", "fechada")
+    .in("tickets.attended_on", days)
+    .returns<{ method: PayMethod; amount_cents: number; tickets: { attended_on: string } }[]>();
+  const byDay = new Map<string, number>();
+  for (const p of pays ?? []) {
+    const tk = Array.isArray(p.tickets) ? p.tickets[0] : p.tickets;
+    if (!tk) continue;
+    byDay.set(tk.attended_on, (byDay.get(tk.attended_on) ?? 0) + p.amount_cents);
+  }
 
   const { data: counts } = await supabase
     .from("tickets")
-    .select("register_id, tip_cents")
-    .in("register_id", ids)
+    .select("attended_on, tip_cents")
+    .eq("unit_id", unitId)
+    .in("attended_on", days)
     .eq("status", "fechada")
-    .returns<{ register_id: string; tip_cents: number | null }[]>();
+    .returns<{ attended_on: string; tip_cents: number | null }[]>();
   const nBy = new Map<string, number>();
   const tipsBy = new Map<string, number>();
   for (const t of counts ?? []) {
-    nBy.set(t.register_id, (nBy.get(t.register_id) ?? 0) + 1);
-    // Gorjeta é do barbeiro, não receita: o "Faturado" do caixa é líquido dela.
-    tipsBy.set(t.register_id, (tipsBy.get(t.register_id) ?? 0) + (t.tip_cents ?? 0));
+    nBy.set(t.attended_on, (nBy.get(t.attended_on) ?? 0) + 1);
+    // Gorjeta é do barbeiro, não receita: o "Faturado" do dia é líquido dela.
+    tipsBy.set(t.attended_on, (tipsBy.get(t.attended_on) ?? 0) + (t.tip_cents ?? 0));
   }
 
   return data.map((r) => ({
@@ -389,8 +441,8 @@ export async function listClosedRegisters(
     closedByName: r.closed_by_name,
     expectedCashCents: r.expected_cash_cents,
     countedCashCents: r.counted_cash_cents,
-    ticketCount: nBy.get(r.id) ?? 0,
-    totalCents: Math.max(0, (byReg.get(r.id) ?? 0) - (tipsBy.get(r.id) ?? 0)),
+    ticketCount: nBy.get(r.business_date) ?? 0,
+    totalCents: Math.max(0, (byDay.get(r.business_date) ?? 0) - (tipsBy.get(r.business_date) ?? 0)),
   }));
 }
 

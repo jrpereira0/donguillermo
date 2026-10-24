@@ -10,10 +10,7 @@ import {
   Banknote,
   ChevronRight,
   Clock3,
-  CreditCard,
-  HandCoins,
   Plus,
-  QrCode,
   Receipt,
   TriangleAlert,
   Wallet,
@@ -30,7 +27,7 @@ import { CashHistoryPanel } from "./cash-history";
 import { FormAlert } from "@/components/auth/form-alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import { expectedCash, payMethodLabel, type PayMethod } from "@/lib/caixa/math";
+import { expectedCash, PAY_METHODS, payMethodLabel } from "@/lib/caixa/math";
 import type { CashMovement, CashTicketRow, CatalogBarber, ClosedRegister, MethodTotals, OpenRegister } from "@/lib/caixa/types";
 import { cn } from "@/lib/utils";
 import type { FormState } from "@/lib/validation/auth";
@@ -39,13 +36,6 @@ import { formatBRL, maskMoney, moneyToCents } from "@/lib/validation/service";
 const idle: FormState = { status: "idle" };
 const timeFmt = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 const dateFmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", timeZone: "America/Sao_Paulo" });
-
-const METHOD_ICONS: Record<PayMethod, LucideIcon> = {
-  dinheiro: Banknote,
-  pix: QrCode,
-  debito: CreditCard,
-  credito: CreditCard,
-};
 
 const field = "field-luxe h-11 w-full min-w-0 rounded-lg border border-input bg-transparent px-3 text-sm text-cream outline-none";
 
@@ -66,67 +56,73 @@ function payLabel(t: CashTicketRow) {
     .join(" · ");
 }
 
+const CARD =
+  "overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-[#262626]/85 to-[#161616]/90 shadow-[inset_0_1px_0_rgb(242_237_228/0.06)]";
+
 function Panel({
   icon: Icon,
   title,
-  right,
+  value,
+  pad = true,
   children,
-  gold,
 }: {
   icon: LucideIcon;
   title: string;
-  right?: React.ReactNode;
+  value?: string;
+  pad?: boolean;
   children: React.ReactNode;
-  gold?: boolean;
 }) {
   return (
-    <section
-      className={cn(
-        "overflow-hidden rounded-2xl border bg-gradient-to-b from-[#262626]/85 to-[#161616]/90 shadow-[inset_0_1px_0_rgb(242_237_228/0.06)]",
-        gold ? "border-gold/30" : "border-border",
-      )}
-    >
-      <header className="flex items-center gap-3 border-b border-border/80 bg-black/20 px-4 py-3 sm:px-5">
+    <section className={cn(CARD, "flex h-full flex-col")}>
+      <header className="flex h-14 items-center gap-3 border-b border-border/80 bg-black/20 px-5">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-gold/30 bg-gold/10 text-gold">
           <Icon className="size-4" aria-hidden="true" />
         </span>
-        <h2 className="min-w-0 flex-1 font-heading text-base font-semibold uppercase tracking-wide text-cream">{title}</h2>
-        {right}
+        <h2 className="min-w-0 flex-1 truncate font-heading text-base font-semibold tracking-wide text-cream uppercase">{title}</h2>
+        {value ? <span className="shrink-0 font-heading text-sm font-semibold tabular-nums text-gold">{value}</span> : null}
       </header>
-      {children}
+      <div className={cn("flex min-h-0 flex-1 flex-col", pad && "gap-4 p-5")}>{children}</div>
     </section>
   );
 }
 
-function Kpi({
-  icon: Icon,
-  label,
-  value,
-  hint,
-  accent,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  hint?: string;
-  accent?: "gold" | "amber" | "cream";
-}) {
+function Kpi({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-gradient-to-b from-[#262626]/85 to-[#161616]/90 p-4 shadow-[inset_0_1px_0_rgb(242_237_228/0.06)]">
-      <div className="flex items-center justify-between gap-2">
-        <p className="label-caps text-[0.62rem]">{label}</p>
-        <Icon className="size-4 text-gold/70" aria-hidden="true" />
-      </div>
-      <p
-        className={cn(
-          "mt-2 font-heading text-[1.7rem] font-semibold leading-none tracking-wide tabular-nums",
-          accent === "gold" ? "text-gold" : accent === "amber" ? "text-amber-200" : "text-cream",
-        )}
-      >
-        {value}
-      </p>
-      {hint ? <p className="mt-2 text-xs text-muted-foreground">{hint}</p> : null}
+    <div className={cn(CARD, "flex h-full flex-col px-4 py-4")}>
+      <p className="label-caps truncate text-[0.62rem]">{label}</p>
+      <p className="mt-2 truncate font-heading text-[1.45rem] leading-none font-semibold tabular-nums text-cream">{value}</p>
+      <p className="mt-2 truncate text-[0.7rem] text-muted-foreground">{hint}</p>
     </div>
+  );
+}
+
+function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-border/70 bg-black/25 px-3.5 py-3">
+      <p className="label-caps truncate text-[0.58rem]">{label}</p>
+      <p className="mt-1.5 truncate font-heading text-lg leading-none font-semibold tabular-nums text-cream">{value}</p>
+      <p className="mt-1.5 h-4 truncate text-[0.68rem] text-muted-foreground">{hint ?? "\u00a0"}</p>
+    </div>
+  );
+}
+
+function BarRow({ label, value, width, meta }: { label: string; value: string; width: number; meta?: string }) {
+  return (
+    <li>
+      <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
+        <span className="min-w-0 truncate text-muted-foreground">{label}</span>
+        <span className="shrink-0 tabular-nums text-cream">{value}</span>
+      </div>
+      <div className="flex items-center gap-2.5">
+        <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-gold/35 to-gold"
+            style={{ width: `${Math.max(width > 0 ? 3 : 0, Math.min(100, width))}%` }}
+          />
+        </div>
+        {meta ? <span className="w-10 shrink-0 text-right text-[0.68rem] tabular-nums text-muted-foreground">{meta}</span> : null}
+      </div>
+    </li>
   );
 }
 
@@ -144,19 +140,6 @@ function useFormAlert(state: FormState, editDeps: unknown[]) {
     visible: state.status !== "idle" && !!state.message && state !== dismissed,
     dismiss: () => setDismissed(state),
   };
-}
-
-function CountBadge({ n, amber }: { n: number; amber?: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex min-w-7 items-center justify-center rounded-full border px-2 py-0.5 font-heading text-sm tabular-nums",
-        amber && n > 0 ? "border-amber-300/40 bg-amber-300/10 text-amber-200" : "border-border bg-black/30 text-muted-foreground",
-      )}
-    >
-      {n}
-    </span>
-  );
 }
 
 /** Modal de abertura: monta do zero a cada abertura, sem aviso velho da vez anterior. */
@@ -243,7 +226,7 @@ function MovementForm({ slug, registerId, esperado }: { slug: string; registerId
   const amountCents = moneyToCents(amount) ?? 0;
   const overLimit = kind === "sangria" && amountCents > Math.max(0, esperado);
   return (
-    <form action={action} className="mt-4 flex flex-col gap-3 border-t border-border/70 pt-4">
+    <form action={action} className="flex flex-col gap-3 border-t border-border/70 pt-4">
       {alert.visible ? (
         <FormAlert tone={state.status === "error" ? "error" : "success"} onClose={alert.dismiss}>
           {state.message}
@@ -286,7 +269,7 @@ function MovementForm({ slug, registerId, esperado }: { slug: string; registerId
       />
       {kind === "sangria" ? (
         overLimit ? (
-          <p role="alert" className="text-xs leading-relaxed text-rose-300">
+          <p role="alert" className="text-xs leading-relaxed text-destructive">
             A sangria não pode passar do dinheiro na gaveta ({formatBRL(Math.max(0, esperado))}).
           </p>
         ) : (
@@ -318,7 +301,7 @@ function NewTicketForm({ slug, barbers }: { slug: string; barbers: CatalogBarber
   const alert = useFormAlert(state, [name, barber]);
   const barberOptions = [{ value: "none", label: "Sem profissional" }, ...barbers.map((b) => ({ value: b.id, label: b.name }))];
   return (
-    <form action={action} className="flex flex-col gap-3 px-5 py-4">
+    <form action={action} className="flex flex-col gap-3">
       {alert.visible ? (
         <FormAlert tone="error" onClose={alert.dismiss}>
           {state.message}
@@ -376,7 +359,7 @@ function CloseRegisterForm({
   const countedCents = counted.trim() === "" ? null : moneyToCents(counted);
   const diff = countedCents === null ? null : countedCents - esperado;
   return (
-    <form action={action} className="flex flex-col gap-3 px-5 py-4">
+    <form action={action} className="flex flex-col gap-3">
       <p className="text-xs leading-relaxed text-muted-foreground">
         Conte o dinheiro da gaveta. O esperado é <span className="tabular-nums text-cream">{formatBRL(esperado)}</span>.
       </p>
@@ -402,8 +385,8 @@ function CloseRegisterForm({
           className={cn(
             "rounded-lg border px-3 py-2 text-xs",
             diff === 0
-              ? "border-success/40 bg-success/10 text-emerald-200"
-              : "border-amber-300/40 bg-amber-300/10 text-amber-100",
+              ? "border-success/40 bg-success/10 text-success"
+              : "border-gold/40 bg-gold/10 text-gold",
           )}
           aria-live="polite"
         >
@@ -423,7 +406,7 @@ function CloseRegisterForm({
         className={field}
       />
       {blockingCount > 0 ? (
-        <p className="rounded-lg border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
+        <p className="rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-xs text-cream">
           Ainda há {blockingCount} {blockingCount === 1 ? "comanda aberta" : "comandas abertas"} do dia deste caixa somando{" "}
           {formatBRL(blockingCents)}. Receba ou cancele antes de fechar.
         </p>
@@ -527,32 +510,25 @@ export function CashDesk({
   const dayOpenTickets = openTickets.filter((t) => spDayFmt.format(new Date(t.openedAt)) === register.businessDate);
   const dayOpenCents = dayOpenTickets.reduce((n, t) => n + t.totalCents, 0);
 
-  const gavetaLine = (label: string, value: string, tone?: "plus" | "minus") => (
-    <div className="flex items-center justify-between gap-3 py-1 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={cn("tabular-nums", tone === "plus" ? "text-emerald-300" : tone === "minus" ? "text-rose-300" : "text-cream")}>
-        {value}
-      </span>
-    </div>
-  );
+  const payBase = Math.max(recebido, 1);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       {staleRegister || futureRegister ? (
         <div
           role="alert"
-          className="flex flex-wrap items-center gap-4 rounded-2xl border border-amber-300/50 bg-amber-300/10 px-5 py-4"
+          className="flex flex-wrap items-center gap-4 rounded-2xl border border-gold/40 bg-gold/10 px-5 py-4"
         >
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-full border border-amber-300/50 bg-amber-300/15 text-amber-200">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full border border-gold/40 bg-gold/15 text-gold">
             <TriangleAlert className="size-5" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="font-heading text-lg font-semibold uppercase tracking-wide text-amber-100">
+            <h2 className="font-heading text-lg font-semibold uppercase tracking-wide text-gold">
               {staleRegister
                 ? `O caixa de ${staleLabel} ainda está aberto`
                 : `O caixa aberto é de ${dateFmt.format(new Date(`${register.businessDate}T12:00:00`))}`}
             </h2>
-            <p className="mt-0.5 text-sm leading-relaxed text-amber-100/80">
+            <p className="mt-0.5 text-sm leading-relaxed text-cream/80">
               As comandas de hoje só podem ser recebidas no caixa de hoje.
               {todayOpenCount
                 ? ` Há ${todayOpenCount} ${todayOpenCount === 1 ? "comanda de hoje esperando" : "comandas de hoje esperando"}.`
@@ -566,7 +542,7 @@ export function CashDesk({
         </div>
       ) : null}
 
-      <div className="reveal flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-gold/25 bg-[#14120e] px-4 py-3 sm:px-5">
+      <div className={cn(CARD, "flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3")}>
         <span className="inline-flex items-center gap-2 text-sm text-cream">
           <span className="size-2 rounded-full bg-success shadow-[0_0_8px_rgb(143_191_106/0.8)]" aria-hidden="true" />
           Caixa aberto
@@ -581,172 +557,173 @@ export function CashDesk({
         </span>
       </div>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Resumo do caixa">
+      <section className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Resumo do caixa">
         <Kpi
-          icon={Receipt}
           label="Faturado"
           value={formatBRL(faturado)}
-          hint={paidTickets.length ? `${paidTickets.length} ${paidTickets.length === 1 ? "comanda" : "comandas"} · média ${formatBRL(ticketMedio)}` : "Nenhuma comanda recebida"}
-          accent="gold"
+          hint={paidTickets.length ? `${paidTickets.length} ${paidTickets.length === 1 ? "comanda" : "comandas"} · sem gorjeta` : "Nenhuma comanda recebida"}
         />
+        <Kpi label="Ticket médio" value={formatBRL(ticketMedio)} hint="Por comanda recebida" />
         <Kpi
-          icon={Clock3}
           label="A receber"
           value={formatBRL(aReceber)}
-          hint={openTickets.length ? `${openTickets.length} ${openTickets.length === 1 ? "aberta" : "abertas"} · mais antiga ${waitingLabel(openTickets[0].openedAt)}` : "Nenhuma comanda aberta"}
-          accent={openTickets.length ? "amber" : "cream"}
+          hint={
+            openTickets.length
+              ? `${openTickets.length} ${openTickets.length === 1 ? "aberta" : "abertas"} · mais antiga ${waitingLabel(openTickets[0]!.openedAt)}`
+              : "Nenhuma comanda aberta"
+          }
         />
-        <Kpi icon={HandCoins} label="Gorjetas" value={formatBRL(gorjetas)} hint={descontos ? `Descontos dados: ${formatBRL(descontos)}` : "Nas comandas recebidas"} />
-        <Kpi icon={Wallet} label="Dinheiro na gaveta" value={formatBRL(esperado)} hint="O que deve ter ao fechar" />
+        <Kpi
+          label="Gorjetas"
+          value={formatBRL(gorjetas)}
+          hint={descontos ? `Descontos ${formatBRL(descontos)}` : "Dos profissionais"}
+        />
+        <Kpi label="Na gaveta" value={formatBRL(esperado)} hint="O que deve ter ao fechar" />
       </section>
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="flex min-w-0 flex-col gap-6">
-          <Panel icon={Clock3} title="A receber agora" gold={openTickets.length > 0} right={<CountBadge n={openTickets.length} amber />}>
-            {openTickets.length === 0 ? (
-              <p className="px-5 py-8 text-sm text-muted-foreground">
-                Nenhuma comanda aberta. As que forem abertas na agenda aparecem aqui, da mais antiga para a mais nova.
-              </p>
-            ) : (
-              <ul className="divide-y divide-border/70">
-                {openTickets.map((t) => (
-                  <li key={t.id}>
-                    <Link
-                      href={`/u/${slug}/caixa/comanda/${t.id}`}
-                      className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-gold/[0.05] sm:px-5"
-                    >
-                      <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-gold/30 bg-gold/10 font-heading text-sm text-gold">
-                        {t.customerName.trim().charAt(0).toUpperCase() || "?"}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium text-cream">{t.customerName}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {t.barberName ? `${t.barberName} · ` : ""}
-                          {t.items.length ? t.items.join(", ") : "Sem itens ainda"}
-                        </span>
-                      </span>
-                      <span className="hidden shrink-0 text-right sm:block">
-                        <span className="block text-xs tabular-nums text-muted-foreground">{timeFmt.format(new Date(t.openedAt))}</span>
-                        <span className="block text-[0.65rem] text-amber-200/90">{waitingLabel(t.openedAt)}</span>
-                      </span>
-                      <span className="shrink-0 font-heading text-lg tabular-nums text-gold">{formatBRL(t.totalCents)}</span>
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-gold" aria-hidden="true" />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        <Panel icon={Wallet} title="Formas de pagamento" value={formatBRL(recebido)}>
+          <div className="grid grid-cols-3 gap-3">
+            <Tile label="Faturado" value={formatBRL(faturado)} hint="Sem gorjeta" />
+            <Tile label="Gorjetas" value={formatBRL(gorjetas)} hint="Fora do faturado" />
+            <Tile label="Descontos" value={formatBRL(descontos)} hint="Nas recebidas" />
+          </div>
+          <ul className="flex flex-col gap-3.5">
+            {PAY_METHODS.map((m) => {
+              const cents = methods[m.value];
+              const pct = recebido > 0 ? Math.round((cents / recebido) * 100) : 0;
+              return (
+                <BarRow
+                  key={m.value}
+                  label={m.label}
+                  value={formatBRL(cents)}
+                  width={(cents / payBase) * 100}
+                  meta={`${pct}%`}
+                />
+              );
+            })}
+          </ul>
+        </Panel>
 
-          <Panel icon={Receipt} title="Recebidas neste caixa" right={<CountBadge n={paidTickets.length} />}>
-            {paidTickets.length === 0 ? (
-              <p className="px-5 py-8 text-sm text-muted-foreground">Ainda não entrou pagamento neste caixa.</p>
-            ) : (
-              <ul className="divide-y divide-border/70">
-                {paidTickets.map((t) => (
-                  <li key={t.id}>
-                    <Link
-                      href={`/u/${slug}/caixa/comanda/${t.id}`}
-                      className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-white/[0.03] sm:px-5"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium text-cream">{t.customerName}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {t.closedAt ? `${timeFmt.format(new Date(t.closedAt))} · ` : ""}
-                          {payLabel(t) || t.items.join(", ") || "—"}
-                          {t.tipCents ? ` · gorjeta ${formatBRL(t.tipCents)}` : ""}
-                        </span>
-                      </span>
-                      <span className="shrink-0 font-heading text-lg tabular-nums text-cream">{formatBRL(t.totalCents)}</span>
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-gold" aria-hidden="true" />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
+        <Panel icon={Banknote} title="Gaveta" value={formatBRL(esperado)}>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Tile label="Fundo" value={formatBRL(register.openingCents)} hint="Na abertura" />
+            <Tile label="Dinheiro" value={formatBRL(methods.dinheiro)} hint="Vendas" />
+            <Tile label="Suprimentos" value={formatBRL(suprimento)} />
+            <Tile label="Sangrias" value={formatBRL(sangria)} />
+          </div>
+          <MovementForm key={register.id} slug={slug} registerId={register.id} esperado={esperado} />
+          {movements.length > 0 ? (
+            <ul className="scroll-luxe flex max-h-44 flex-col gap-1 overflow-y-auto border-t border-border/70 pt-3 pr-1">
+              {movements.map((m) => (
+                <li key={m.id} className="flex items-baseline justify-between gap-2 py-1 text-xs">
+                  <span className="min-w-0 text-muted-foreground">
+                    <span className="tabular-nums">{timeFmt.format(new Date(m.createdAt))}</span>{" "}
+                    {m.kind === "sangria" ? "Sangria" : "Suprimento"}
+                    {m.note ? ` · ${m.note}` : ""}
+                  </span>
+                  <span className={cn("shrink-0 tabular-nums", m.kind === "sangria" ? "text-destructive" : "text-success")}>
+                    {m.kind === "sangria" ? "−" : "+"}
+                    {formatBRL(m.amountCents)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </Panel>
+      </div>
+
+      <Panel icon={Clock3} title="A receber agora" value={String(openTickets.length)} pad={false}>
+        {openTickets.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-muted-foreground">
+            Nenhuma comanda aberta. As que forem abertas na agenda aparecem aqui, da mais antiga para a mais nova.
+          </p>
+        ) : (
+          <ul>
+            <li className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_7rem_7.5rem_1rem] gap-3 border-b border-border/60 px-5 py-2 lg:grid">
+              {["Cliente", "Itens", "Espera", "Total", ""].map((h, i) => (
+                <span key={h} className={cn("label-caps text-[0.58rem]", i === 3 && "text-right")}>
+                  {h}
+                </span>
+              ))}
+            </li>
+            {openTickets.map((t) => (
+              <li key={t.id} className="border-b border-border/50 last:border-b-0">
+                <Link
+                  href={`/u/${slug}/caixa/comanda/${t.id}`}
+                  className="group grid items-center gap-1 px-4 py-3.5 transition-colors hover:bg-gold/[0.05] sm:px-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_7rem_7.5rem_1rem] lg:gap-3"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-cream group-hover:text-gold">{t.customerName}</span>
+                    {t.barberName ? <span className="block truncate text-xs text-muted-foreground lg:hidden">{t.barberName}</span> : null}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {t.barberName ? <span className="hidden lg:inline">{t.barberName} · </span> : null}
+                    {t.items.length ? t.items.join(", ") : "Sem itens ainda"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {timeFmt.format(new Date(t.openedAt))}
+                    <span className="text-gold/80"> · {waitingLabel(t.openedAt)}</span>
+                  </span>
+                  <span className="text-sm tabular-nums text-gold lg:text-right">{formatBRL(t.totalCents)}</span>
+                  <ChevronRight className="hidden size-4 text-muted-foreground group-hover:text-gold lg:block" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+
+      <Panel icon={Receipt} title="Recebidas neste caixa" value={String(paidTickets.length)} pad={false}>
+        {paidTickets.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-muted-foreground">Ainda não entrou pagamento neste caixa.</p>
+        ) : (
+          <ul>
+            <li className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_8rem_7.5rem_1rem] gap-3 border-b border-border/60 px-5 py-2 lg:grid">
+              {["Cliente", "Pagamento", "Horário", "Total", ""].map((h, i) => (
+                <span key={h} className={cn("label-caps text-[0.58rem]", i === 3 && "text-right")}>
+                  {h}
+                </span>
+              ))}
+            </li>
+            {paidTickets.map((t) => (
+              <li key={t.id} className="border-b border-border/50 last:border-b-0">
+                <Link
+                  href={`/u/${slug}/caixa/comanda/${t.id}`}
+                  className="group grid items-center gap-1 px-4 py-3.5 transition-colors hover:bg-gold/[0.05] sm:px-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_8rem_7.5rem_1rem] lg:gap-3"
+                >
+                  <span className="truncate text-sm font-medium text-cream group-hover:text-gold">{t.customerName}</span>
+                  <span className="truncate text-xs text-muted-foreground">{payLabel(t) || t.items.join(", ") || "—"}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {t.closedAt ? timeFmt.format(new Date(t.closedAt)) : "—"}
+                    {t.tipCents ? <span className="text-gold/80"> · gorjeta {formatBRL(t.tipCents)}</span> : null}
+                  </span>
+                  <span className="text-sm tabular-nums text-cream lg:text-right">{formatBRL(t.totalCents)}</span>
+                  <ChevronRight className="hidden size-4 text-muted-foreground group-hover:text-gold lg:block" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        <Panel icon={Plus} title="Nova comanda">
+          <NewTicketForm slug={slug} barbers={barbers} />
+        </Panel>
+        <div id="fechar-caixa" className="scroll-mt-6">
+          <Panel icon={Receipt} title="Fechar caixa" value={formatBRL(esperado)}>
+            <CloseRegisterForm
+              key={register.id}
+              slug={slug}
+              registerId={register.id}
+              esperado={esperado}
+              blockingCount={dayOpenTickets.length}
+              blockingCents={dayOpenCents}
+              waitingCount={openTickets.length - dayOpenTickets.length}
+            />
           </Panel>
         </div>
-
-        <aside className="flex flex-col gap-4 xl:sticky xl:top-6">
-          <Panel icon={Wallet} title="Formas de pagamento">
-            <ul className="flex flex-col gap-4 px-5 py-4">
-              {(Object.keys(methods) as PayMethod[]).map((k) => {
-                const Icon = METHOD_ICONS[k];
-                const pct = recebido > 0 ? Math.round((methods[k] / recebido) * 100) : 0;
-                return (
-                  <li key={k}>
-                    <div className="flex items-center gap-2 text-sm">
-                      <Icon className="size-4 shrink-0 text-gold/80" aria-hidden="true" />
-                      <span className="flex-1 text-muted-foreground">
-                        {payMethodLabel(k)}
-                        {k === "credito" && methods.credito > 0 ? <span className="text-xs"> (com parcelas)</span> : null}
-                      </span>
-                      <span className="text-xs tabular-nums text-muted-foreground">{pct}%</span>
-                      <span className="min-w-20 text-right tabular-nums text-cream">{formatBRL(methods[k])}</span>
-                    </div>
-                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]" aria-hidden="true">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-[#8a6d35] to-gold transition-[width] duration-500"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </Panel>
-
-          <Panel icon={Banknote} title="Gaveta" gold>
-            <div className="px-5 py-4">
-              {gavetaLine("Fundo de abertura", formatBRL(register.openingCents))}
-              {gavetaLine("Vendas em dinheiro", formatBRL(methods.dinheiro))}
-              {gavetaLine("Suprimentos", `+ ${formatBRL(suprimento)}`, "plus")}
-              {gavetaLine("Sangrias", `− ${formatBRL(sangria)}`, "minus")}
-              <div className="mt-2 flex items-end justify-between border-t border-gold/25 pt-3">
-                <span className="label-caps text-[0.62rem] text-gold">Deve ter na gaveta</span>
-                <span className="font-heading text-2xl leading-none tabular-nums text-gold">{formatBRL(esperado)}</span>
-              </div>
-
-              <MovementForm key={register.id} slug={slug} registerId={register.id} esperado={esperado} />
-
-              {movements.length > 0 ? (
-                <ul className="scroll-luxe mt-4 flex max-h-44 flex-col gap-1 overflow-y-auto border-t border-border/70 pt-3 pr-1">
-                  {movements.map((m) => (
-                    <li key={m.id} className="flex items-baseline justify-between gap-2 py-1 text-xs">
-                      <span className="min-w-0 text-muted-foreground">
-                        <span className="tabular-nums">{timeFmt.format(new Date(m.createdAt))}</span>{" "}
-                        {m.kind === "sangria" ? "Sangria" : "Suprimento"}
-                        {m.note ? ` · ${m.note}` : ""}
-                      </span>
-                      <span className={cn("shrink-0 tabular-nums", m.kind === "sangria" ? "text-rose-300" : "text-emerald-300")}>
-                        {m.kind === "sangria" ? "−" : "+"}
-                        {formatBRL(m.amountCents)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          </Panel>
-
-          <Panel icon={Plus} title="Nova comanda">
-            <NewTicketForm slug={slug} barbers={barbers} />
-          </Panel>
-
-          <div id="fechar-caixa" className="scroll-mt-6">
-            <Panel icon={Receipt} title="Fechar caixa">
-              <CloseRegisterForm
-                key={register.id}
-                slug={slug}
-                registerId={register.id}
-                esperado={esperado}
-                blockingCount={dayOpenTickets.length}
-                blockingCents={dayOpenCents}
-                waitingCount={openTickets.length - dayOpenTickets.length}
-              />
-            </Panel>
-          </div>
-        </aside>
       </div>
     </div>
   );
