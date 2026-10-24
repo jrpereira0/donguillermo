@@ -25,7 +25,7 @@ export default async function NovoPacotePage({ params }: { params: Promise<{ slu
       <PageHeader
         eyebrow="Catálogo"
         title="Novo pacote"
-        description="Escolha os serviços, as quantidades e o desconto. O cliente paga uma vez e usa o saldo nas visitas."
+        description="Cadastre um novo pacote."
       />
       <PackageForm mode="create" slug={slug} defaults={EMPTY_PACKAGE_DEFAULTS} services={services} />
     </div>

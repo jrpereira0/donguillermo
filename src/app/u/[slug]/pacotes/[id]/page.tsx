@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { getPackage, listPackageBuyers } from "@/lib/packages/queries";
 import { listServices } from "@/lib/services/queries";
-import { formatBRL } from "@/lib/validation/service";
+import { centsToInput, formatBRL } from "@/lib/validation/service";
 import { togglePackageActiveAction } from "../actions";
 
 export const metadata: Metadata = { title: "Editar pacote" };
@@ -38,7 +38,9 @@ export default async function EditarPacotePage({ params }: { params: Promise<{ s
   const defaults: PackageDefaults = {
     name: pkg.name,
     description: pkg.description ?? "",
+    priceMode: pkg.priceMode,
     discountPct: String(pkg.discountPct).replace(".", ","),
+    fixedPrice: pkg.fixedPriceCents !== null ? centsToInput(pkg.fixedPriceCents) : "",
     validityDays: pkg.validityDays ? String(pkg.validityDays) : "",
     items: pkg.items.map((i) => ({ serviceId: i.serviceId, quantity: i.quantity })),
   };

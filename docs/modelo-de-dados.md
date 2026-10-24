@@ -125,7 +125,7 @@ Essas duas regras são garantidas por `CHECK` e índice no banco.
 Um registro por profissional **e unidade** (o mesmo barbeiro em duas lojas tem duas linhas). `user_id` é opcional: liga o profissional ao login (papel `barbeiro`). Principais regras:
 
 - Nome completo (2 a 120) e nome de exibição (2 a 40); sobrenome, endereço e CEP opcionais; telefone só com dígitos; CNPJ opcional (14 caracteres, aceita alfanumérico), único na unidade; `job_title` informativo.
-- `commission_products_pct`: 0 a 100, editado na aba Comissões. `commission_services_pct` não aparece no cadastro: a comissão de serviços vem da tabela `commission_brackets`. A coluna só entra se essa tabela estiver vazia.
+- `commission_services_pct` e `commission_products_pct`: % **próprio** do profissional (0 a 100), definidos pelo admin da rede em `/admin/comissoes`. Preenchido, vale ele; `null`, segue a rede (serviços: tabela `commission_brackets`; produtos: `commission_settings.products_pct`). Não aparecem no cadastro do profissional — a aba Comissões é só leitura.
 - `work_hours`: expediente por dia da semana (jsonb), com intervalo de almoço opcional, sempre dentro do horário da unidade.
 - `photo_path` precisa começar com a pasta da unidade (`<unit_id>/...`).
 - `UPDATE` só nas colunas listadas na migration (privilégio por coluna); não há `DELETE`: o profissional é desativado.
@@ -166,11 +166,11 @@ Todas filtradas por `unit_id`, exceto a tabela de comissão, que é da rede. Din
 |---|---|
 | `appointments`, `appointment_services` | Agenda. Um agendamento pode ter serviços e filhos (encaixe). A recepção pode encaixar. O booking público do cliente ainda não existe; quando existir, `appointmentSlotTaken` (`src/lib/agenda/conflicts.ts`) barra horário ocupado antes de gravar |
 | `products` | Catálogo de produtos da unidade |
-| `packages`, `package_items` | Modelo de pacote (serviços + desconto % + validade) |
+| `packages`, `package_items` | Modelo de pacote (serviços + validade). Preço de duas formas (`price_mode`): desconto % sobre a soma ou valor fixo (`fixed_price_cents`) |
 | `customer_packages`, `customer_package_items` | Pacote vendido ao cliente (foto da venda). Ativa ao cobrar a comanda; o saldo é o que sobra dos itens, não um contador |
 | `cash_registers`, `cash_movements`, `cash_register_events` | Um caixa por dia. Sangria não passa do dinheiro da gaveta. O fechamento só exige comandas abertas **daquele dia** |
-| `tickets`, `ticket_items`, `ticket_payments`, `ticket_tips` | Comanda. Serviço exige profissional (senão a comissão se perde). A venda do pacote não tem profissional; o uso de cada serviço tem. A comanda só fecha no caixa do dia em que foi aberta |
-| `commission_brackets` | Faixas da comissão de serviços (admin da rede). O % da faixa do faturamento mensal de serviços vale sobre o mês inteiro. Produtos usam o % do profissional |
+| `tickets`, `ticket_items`, `ticket_payments`, `ticket_tips` | Comanda. Serviço exige profissional (senão a comissão se perde). A venda do pacote não tem profissional; o uso de cada serviço tem. A comanda só pode ser recebida no caixa do dia do atendimento (`tickets.attended_on`, dia de São Paulo da abertura), e a comissão e o faturamento são sempre desse dia; `register_id`/`closed_at` dizem onde e quando foi recebido |
+| `commission_brackets`, `commission_settings` | Comissão definida pelo admin da rede (`/admin/comissoes`): faixas de serviços pelo faturamento mensal (o % da faixa vale sobre o mês inteiro) e % único de produtos. Profissional com % próprio (em `barbers`) fica fora da regra da rede |
 
 Funções principais dessa parte: `save_appointment`, `open_ticket_from_appointment`, `save_open_ticket`, `charge_ticket`, `replace_ticket_items`, `close_cash_register`, `reopen_cash_register`, `reopen_ticket`, `commission_summary`.
 

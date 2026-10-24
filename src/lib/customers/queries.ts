@@ -1,4 +1,5 @@
 import "server-only";
+import { ticketTotals } from "@/lib/caixa/math";
 import { createClient } from "@/lib/supabase/server";
 import { CUSTOMER_COLUMNS, type CustomerHistoryEntry, type CustomerNote, type CustomerRow } from "./types";
 
@@ -87,7 +88,7 @@ export async function listCustomerHistory(customerId: string): Promise<CustomerH
     supabase
       .from("tickets")
       .select(
-        "id, unit_id, opened_at, status, barber_name, discount_cents, tip_cents, ticket_items(name, quantity, unit_price_cents, position)",
+        "id, unit_id, opened_at, status, barber_name, discount_cents, tip_cents, ticket_items(name, kind, quantity, unit_price_cents, position, customer_package_id)",
       )
       .eq("customer_id", customerId)
       .order("opened_at", { ascending: false })
@@ -101,7 +102,14 @@ export async function listCustomerHistory(customerId: string): Promise<CustomerH
           barber_name: string | null;
           discount_cents: number;
           tip_cents: number;
-          ticket_items: { name: string; quantity: number; unit_price_cents: number; position: number }[];
+          ticket_items: {
+            name: string;
+            kind: string;
+            quantity: number;
+            unit_price_cents: number;
+            position: number;
+            customer_package_id: string | null;
+          }[];
         }[]
       >(),
     supabase.rpc("network_units"),
@@ -115,7 +123,17 @@ export async function listCustomerHistory(customerId: string): Promise<CustomerH
   );
   return (tickets.data ?? []).map((t) => {
     const lines = [...(t.ticket_items ?? [])].sort((a, b) => a.position - b.position);
-    const subtotal = lines.reduce((n, l) => n + l.quantity * l.unit_price_cents, 0);
+    // Serviço pelo pacote já foi pago na venda do pacote. O preço gravado nele
+    // é a cota do profissional, e não entra no que o cliente gastou.
+    const totalCents = ticketTotals(
+      lines.map((l) => ({
+        quantity: l.quantity,
+        unitPriceCents: l.unit_price_cents,
+        packageCovered: l.kind === "servico" && !!l.customer_package_id,
+      })),
+      t.discount_cents,
+      t.tip_cents ?? 0,
+    ).total;
     const unit = byId.get(t.unit_id);
     return {
       id: t.id,
@@ -124,7 +142,7 @@ export async function listCustomerHistory(customerId: string): Promise<CustomerH
       unitSlug: unit?.slug ?? null,
       barberName: t.barber_name,
       status: t.status,
-      totalCents: Math.max(0, subtotal - t.discount_cents) + (t.tip_cents ?? 0),
+      totalCents,
       items: lines.map((l) => (l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name)),
     };
   });

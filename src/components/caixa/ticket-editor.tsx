@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useActionState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,6 +11,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { PAY_METHODS, payMethodLabel, ticketTotals, type PayMethod } from "@/lib/caixa/math";
 import type { CatalogBarber, CatalogProduct, CatalogService, TicketDetail, TicketLine, TicketPackageOption, TicketPackageSaleOption } from "@/lib/caixa/types";
+import { packageServiceShareCents } from "@/lib/packages/math";
 import type { FormState } from "@/lib/validation/auth";
 import { centsToInput, formatBRL, maskMoney, moneyToCents } from "@/lib/validation/service";
 import { cn } from "@/lib/utils";
@@ -81,7 +82,7 @@ export function TicketEditor({
   /** Catálogo de pacotes vendável nesta comanda. */
   salePackages?: TicketPackageSaleOption[];
   registerOpen: boolean;
-  /** Dia de referência (yyyy-mm-dd) do caixa aberto; a comanda só fecha no caixa do dia dela. */
+  /** Dia de referência (yyyy-mm-dd) do caixa aberto; a comanda só é recebida no caixa do dia dela. */
   registerDay?: string | null;
   onCharged?: (message: string) => void;
   onSaved?: (message: string) => void;
@@ -93,6 +94,8 @@ export function TicketEditor({
   const ticketDay = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
     new Date(ticket.openedAt),
   );
+  // A comanda só é recebida no caixa do dia dela: com o caixa de outro dia
+  // aberto, o recebimento trava e a tela informa de que dia a comanda é.
   const dayMismatch = registerOpen && !!registerDay && registerDay !== ticketDay;
   const dayLabel = (iso: string) =>
     new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "long", timeZone: "America/Sao_Paulo" }).format(
@@ -118,6 +121,7 @@ export function TicketEditor({
   const [confirmFree, setConfirmFree] = useState(false);
   /** Aviso ao tentar fechar sem escolher a forma de pagamento. */
   const [payAlert, setPayAlert] = useState(false);
+  const paySectionRef = useRef<HTMLElement>(null);
   const [tips, setTips] = useState<TipLine[]>(() =>
     ticket.tips.map((t) => ({ barberId: t.barberId, amount: centsToInput(t.amountCents) })),
   );
@@ -274,6 +278,10 @@ export function TicketEditor({
   useEffect(() => {
     if (!missingMethod) setPayAlert(false);
   }, [missingMethod]);
+  useEffect(() => {
+    if (!payAlert || !missingMethod) return;
+    paySectionRef.current?.scrollIntoView({ block: "nearest" });
+  }, [payAlert, missingMethod]);
   const linesReady = lines.length > 0 && lines.every((l) => l.name.trim().length > 0);
   // Serviço sem profissional perde a comissão: tem que escolher quem fez —
   // vale para serviço comum e para uso de pacote. (A venda do pacote, ao
@@ -388,7 +396,7 @@ export function TicketEditor({
           packageId: null as string | null,
           packageName: cp.packageName,
           remaining,
-          unitPriceCents: item.unitPriceCents,
+          unitPriceCents: packageServiceShareCents(cp.priceCents, cp.totalServices),
         };
       }
     }
@@ -407,7 +415,7 @@ export function TicketEditor({
           packageId: tpl.packageId as string | null,
           packageName: tpl.name,
           remaining,
-          unitPriceCents: item.unitPriceCents,
+          unitPriceCents: packageServiceShareCents(tpl.priceCents, tpl.totalServices),
         };
       }
     }
@@ -419,7 +427,13 @@ export function TicketEditor({
     const l = lines[i];
     if (!l) return;
     if (!toPackage) {
-      patch(i, { customerPackageId: null, packageId: null, packageName: null });
+      const list = l.serviceId ? services.find((s) => s.id === l.serviceId)?.priceCents : undefined;
+      patch(i, {
+        customerPackageId: null,
+        packageId: null,
+        packageName: null,
+        ...(list != null ? { unitPriceCents: list } : {}),
+      });
       return;
     }
     const src = eligibleSource(l);
@@ -491,7 +505,7 @@ export function TicketEditor({
           serviceId: item.serviceId,
           name: item.serviceName,
           quantity: 1,
-          unitPriceCents: item.unitPriceCents,
+          unitPriceCents: packageServiceShareCents(tpl.priceCents, tpl.totalServices),
           barberId,
           customerPackageId: saleLine.customerPackageId,
           packageId: tpl.packageId,
@@ -512,7 +526,7 @@ export function TicketEditor({
         serviceId: item.serviceId,
         name: item.serviceName,
         quantity: 1,
-        unitPriceCents: item.unitPriceCents,
+        unitPriceCents: packageServiceShareCents(cp.priceCents, cp.totalServices),
         barberId,
         customerPackageId: cp.customerPackageId,
         packageId: null,
@@ -642,9 +656,11 @@ export function TicketEditor({
                   </span>
                   {isCovered(l) ? (
                     <span className="flex shrink-0 items-baseline gap-1.5">
-                      <span className="text-xs tabular-nums text-muted-foreground line-through">
-                        {formatBRL(l.quantity * l.unitPriceCents)}
-                      </span>
+                      {l.serviceId && services.find((s) => s.id === l.serviceId)?.priceCents ? (
+                        <span className="text-xs tabular-nums text-muted-foreground line-through">
+                          {formatBRL(l.quantity * services.find((s) => s.id === l.serviceId)!.priceCents)}
+                        </span>
+                      ) : null}
                       <span className="text-sm font-medium tabular-nums text-gold">{formatBRL(0)}</span>
                     </span>
                   ) : (
@@ -834,14 +850,14 @@ export function TicketEditor({
                 const totalRemaining = block.items.reduce((n, i) => n + Math.max(0, i.remaining), 0);
                 const onlyItem = block.items.length === 1 ? block.items[0] : null;
                 return (
-                  <div key={block.key} className={cn("px-2.5 py-1.5", block.buying && "bg-amber-300/[0.04]")}>
+                  <div key={block.key} className={cn("px-2.5 py-1.5", block.buying && "bg-gold/[0.06]")}>
                     <div className="flex items-start gap-2">
                       <span
                         className={cn(
                           "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border",
                           block.buying
-                            ? "border-amber-300/25 bg-amber-300/10 text-amber-300"
-                            : "border-emerald-300/25 bg-emerald-300/10 text-emerald-300",
+                            ? "border-gold/40 bg-gold/10 text-gold"
+                            : "border-success/40 bg-success/10 text-success",
                         )}
                       >
                         {block.buying ? (
@@ -857,8 +873,8 @@ export function TicketEditor({
                             className={cn(
                               "shrink-0 rounded-full border px-1 py-px text-[0.55rem] font-semibold tracking-wide uppercase",
                               block.buying
-                                ? "border-amber-300/25 bg-amber-300/10 text-amber-200"
-                                : "border-emerald-300/25 bg-emerald-300/10 text-emerald-200",
+                                ? "border-gold/40 bg-gold/10 text-gold"
+                                : "border-success/40 bg-success/10 text-success",
                             )}
                           >
                             {block.buying ? "Novo nesta comanda" : "Ativo"}
@@ -873,7 +889,7 @@ export function TicketEditor({
                               className={cn(
                                 "ml-auto h-6 shrink-0 px-2",
                                 block.buying
-                                  ? "border-amber-300/40 text-amber-200 hover:bg-amber-300/10 hover:text-amber-100"
+                                  ? "border-gold/40 text-gold hover:bg-gold/10 hover:text-gold-hover"
                                   : "border-gold/40 text-gold hover:bg-gold/10 hover:text-gold",
                               )}
                             >
@@ -912,7 +928,7 @@ export function TicketEditor({
                               className={cn(
                                 "h-5 shrink-0 px-1.5",
                                 block.buying
-                                  ? "border-amber-300/40 text-amber-200 hover:bg-amber-300/10 hover:text-amber-100"
+                                  ? "border-gold/40 text-gold hover:bg-gold/10 hover:text-gold-hover"
                                   : "border-gold/40 text-gold hover:bg-gold/10 hover:text-gold",
                               )}
                             >
@@ -991,7 +1007,7 @@ export function TicketEditor({
         ) : null}
 
         {coveredMissingBarber.length ? (
-          <p role="alert" className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+          <p role="alert" className="rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-xs leading-relaxed text-cream">
             Escolha o profissional de {coveredMissingBarber.map((l) => l.name).join(", ")}: serviço sem profissional
             perde a comissão de quem fez.
           </p>
@@ -1012,51 +1028,36 @@ export function TicketEditor({
               </div>
             ) : null}
             <ul className="scroll-luxe flex min-h-0 flex-1 flex-col divide-y divide-border/70 overflow-y-auto">
-            {lines.map((l, i) => (
+            {lines.map((l, i) => {
+              const source = eligibleSource(l);
+              const listCents = l.serviceId ? services.find((s) => s.id === l.serviceId)?.priceCents : undefined;
+              return (
               <li key={l.key} className="px-3 py-2.5 transition-colors hover:bg-white/[0.015]">
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[0.86rem] leading-5 font-semibold text-cream">{l.name}</p>
-                    <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.65rem] leading-none text-muted-foreground">
-                      <span className="font-medium tracking-[0.06em] text-gold/75 uppercase">
-                        {isSale(l)
-                          ? "Venda de pacote"
-                          : isCovered(l)
-                            ? `Pacote${l.packageName ? ` · ${l.packageName}` : ""}`
-                            : l.kind === "produto"
-                              ? "Produto"
-                              : "Serviço"}
-                      </span>
-                      {isSale(l) ? <span>Ativa ao cobrar · sem comissão sobre a venda</span> : null}
-                      {isCovered(l) ? (
-                        <>
-                          <span className="text-gold/90">sem cobrança</span>
-                          <button
-                            type="button"
-                            onClick={() => convertLine(i, false)}
-                            className="cursor-pointer font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-gold hover:underline"
-                          >
-                            Cobrar separado
-                          </button>
-                        </>
-                      ) : eligibleSource(l) ? (
-                        <button
-                          type="button"
-                          onClick={() => convertLine(i, true)}
-                          className="flex h-5 cursor-pointer items-center gap-1 rounded-full border border-gold/40 px-1.5 font-medium text-gold transition-colors hover:border-gold hover:bg-gold/10"
-                        >
-                          <Layers className="size-3" aria-hidden="true" />
-                          Usar do pacote · restam {eligibleSource(l)!.remaining}
-                        </button>
-                      ) : null}
-                    </div>
+                    {isCovered(l) ? (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{l.packageName || "Pacote do cliente"}</p>
+                    ) : isSale(l) ? (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">Venda de pacote · ativa ao cobrar</p>
+                    ) : source ? (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {source.packageName} · restam {source.remaining}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-[0.65rem] font-medium tracking-[0.06em] text-gold/75 uppercase">
+                        {l.kind === "produto" ? "Produto" : "Serviço"}
+                      </p>
+                    )}
                   </div>
 
                   {isCovered(l) ? (
                     <span className="flex shrink-0 items-baseline gap-1.5 pt-0.5 text-right">
-                      <span className="text-[0.7rem] tabular-nums text-muted-foreground line-through">
-                        {formatBRL(l.quantity * l.unitPriceCents)}
-                      </span>
+                      {listCents ? (
+                        <span className="text-[0.7rem] tabular-nums text-muted-foreground line-through">
+                          {formatBRL(l.quantity * listCents)}
+                        </span>
+                      ) : null}
                       <span className="font-heading text-[0.95rem] font-medium tabular-nums text-gold">{formatBRL(0)}</span>
                     </span>
                   ) : (
@@ -1067,7 +1068,7 @@ export function TicketEditor({
                   <button
                     type="button"
                     onClick={() => removeLine(l)}
-                    className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-rose-400/10 hover:text-rose-300"
+                    className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                     aria-label={`Excluir ${l.name || "item"}`}
                   >
                     <Trash2 className="size-3.5" />
@@ -1076,6 +1077,36 @@ export function TicketEditor({
 
                 {isSale(l) ? null : (
                   <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-white/5 bg-black/25 p-1">
+                    {isCovered(l) || source ? (
+                      <span className="flex h-8 shrink-0 rounded-lg border border-border bg-black/30 p-0.5" role="group" aria-label="Como cobrar este item">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!isCovered(l)) convertLine(i, true);
+                          }}
+                          aria-pressed={isCovered(l)}
+                          className={cn(
+                            "cursor-pointer rounded-md px-2.5 text-[0.68rem] font-medium transition-colors",
+                            isCovered(l) ? "bg-gold text-[#101010]" : "text-muted-foreground hover:text-cream",
+                          )}
+                        >
+                          Pacote
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isCovered(l)) convertLine(i, false);
+                          }}
+                          aria-pressed={!isCovered(l)}
+                          className={cn(
+                            "cursor-pointer rounded-md px-2.5 text-[0.68rem] font-medium transition-colors",
+                            !isCovered(l) ? "bg-gold text-[#101010]" : "text-muted-foreground hover:text-cream",
+                          )}
+                        >
+                          Cobrar
+                        </button>
+                      </span>
+                    ) : null}
                     <Select
                       value={l.barberId ?? "none"}
                       onValueChange={(v) => patch(i, { barberId: v === "none" ? null : v })}
@@ -1085,7 +1116,7 @@ export function TicketEditor({
                       searchPlaceholder="Buscar profissional"
                       className={cn(
                         "h-8 min-w-0 flex-1 border-transparent bg-transparent px-2 text-xs shadow-none hover:border-gold/25",
-                        l.kind === "servico" && !l.barberId && "border-amber-300/60 bg-amber-300/10 hover:border-amber-300/80",
+                        l.kind === "servico" && !l.barberId && "border-gold/60 bg-gold/10 hover:border-gold",
                       )}
                     />
                     <input
@@ -1094,7 +1125,7 @@ export function TicketEditor({
                       inputMode="decimal"
                       placeholder="0,00"
                       disabled={isCovered(l)}
-                      title={isCovered(l) ? "Valor do pacote (já pago, só para comissão)" : undefined}
+                      title={isCovered(l) ? "Cota deste serviço no pacote, para o faturamento" : undefined}
                       aria-label={`Preço de ${l.name || "item"}`}
                       className={cn(field, "h-8 w-[6.25rem] shrink-0 border-transparent bg-black/20 px-2 text-right text-sm tabular-nums", isCovered(l) && "opacity-60")}
                     />
@@ -1120,7 +1151,8 @@ export function TicketEditor({
                   </div>
                 )}
               </li>
-            ))}
+              );
+            })}
             </ul>
           </div>
         )}
@@ -1234,7 +1266,7 @@ export function TicketEditor({
             <p className="-mt-1 pb-1 text-right text-[0.65rem] tabular-nums text-muted-foreground">− {formatBRL(discountCents)}</p>
           ) : null}
           {discountOverLimit ? (
-            <p className="-mt-1 pb-1 text-right text-[0.65rem] tabular-nums text-amber-200">
+            <p className="-mt-1 pb-1 text-right text-[0.65rem] tabular-nums text-gold">
               Desconto limitado ao subtotal (− {formatBRL(Math.max(0, subtotalCents))})
             </p>
           ) : null}
@@ -1256,7 +1288,7 @@ export function TicketEditor({
                   type="button"
                   aria-label="Remover gorjeta"
                   onClick={() => setTips((cur) => cur.filter((_, j) => j !== i))}
-                  className="rounded-md p-1 text-muted-foreground hover:text-rose-300"
+                  className="rounded-md p-1 text-muted-foreground hover:text-destructive"
                 >
                   <Trash2 className="size-3.5" />
                 </button>
@@ -1305,7 +1337,7 @@ export function TicketEditor({
                     searchPlaceholder="Buscar profissional"
                   />
                 ) : (
-                  <p className="text-xs text-amber-200">Cadastre um profissional para lançar a gorjeta.</p>
+                  <p className="text-xs text-gold">Cadastre um profissional para lançar a gorjeta.</p>
                 )}
                 <div className="flex gap-2">
                   <Button type="button" className="flex-1" onClick={confirmTip} disabled={!tipBarber || tipDraftCents < 1}>
@@ -1326,7 +1358,7 @@ export function TicketEditor({
         </section>
 
         {!dayMismatch && registerOpen ? (
-          <section className="flex flex-col gap-3">
+          <section ref={paySectionRef} className="flex flex-col gap-3">
             <h4 className="label-caps text-[0.62rem]">Recebimento</h4>
             {pays.map((p, i) => (
               <div key={i} className="flex flex-col gap-3">
@@ -1335,7 +1367,7 @@ export function TicketEditor({
                     <span className="label-caps text-[0.62rem]">Forma {i + 1}</span>
                     <button
                       type="button"
-                      className="text-xs text-muted-foreground hover:text-rose-300"
+                      className="text-xs text-muted-foreground hover:text-destructive"
                       onClick={() => {
                         setPayLocked(true);
                         setPays((cur) => cur.filter((_, j) => j !== i));
@@ -1345,7 +1377,14 @@ export function TicketEditor({
                     </button>
                   </div>
                 ) : null}
-                <div className="grid grid-cols-4 overflow-hidden rounded-lg border border-border" role="group" aria-label={pays.length > 1 ? `Forma ${i + 1}` : "Forma de pagamento"}>
+                <div
+                  className={cn(
+                    "grid grid-cols-4 overflow-hidden rounded-lg border",
+                    payAlert && !p.method ? "border-gold" : "border-border",
+                  )}
+                  role="group"
+                  aria-label={pays.length > 1 ? `Forma ${i + 1}` : "Forma de pagamento"}
+                >
                   {PAY_METHODS.map((m) => (
                     <button
                       key={m.value}
@@ -1360,7 +1399,10 @@ export function TicketEditor({
                       }
                       className={cn(
                         "h-9 cursor-pointer border-r border-border text-xs last:border-r-0",
-                        p.method === m.value ? "bg-gold text-[#1a1408]" : "bg-black/20 text-muted-foreground hover:text-cream",
+                        p.method === m.value
+                          ? "bg-gold text-[#1a1408]"
+                          : "bg-black/20 text-muted-foreground hover:text-cream",
+                        payAlert && !p.method && "bg-gold/10 text-cream",
                       )}
                     >
                       {m.label}
@@ -1420,43 +1462,37 @@ export function TicketEditor({
               </button>
             ) : null}
             {rest > 0 ? (
-              <p className="text-xs text-amber-200">Falta {formatBRL(rest)} para fechar.</p>
+              <p className="text-xs text-gold">Falta {formatBRL(rest)} para fechar.</p>
             ) : exceedsNonCash ? (
-              <p className="text-xs text-amber-200">
+              <p className="text-xs text-gold">
                 Excede o total em {formatBRL(paidNonCash - totals.total)} — troco só é possível em dinheiro.
               </p>
             ) : troco > 0 ? (
-              <p className="text-xs font-medium text-emerald-300">Troco de {formatBRL(troco)} em dinheiro.</p>
-            ) : null}
-            {payAlert && missingMethod ? (
-              <p role="alert" className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
-                Escolha a forma de pagamento (Dinheiro, Pix, Débito ou Crédito) para fechar a comanda.
-              </p>
+              <p className="text-xs font-medium text-success">Troco de {formatBRL(troco)} em dinheiro.</p>
             ) : null}
           </section>
         ) : dayMismatch ? (
           <div
             role="alert"
-            className="flex flex-col gap-2.5 rounded-xl border border-amber-300/50 bg-amber-300/10 px-4 py-4"
+            className="flex flex-col gap-2.5 rounded-xl border border-gold/40 bg-gold/10 px-4 py-4"
           >
-            <p className="flex items-center gap-2 font-heading text-base font-semibold uppercase tracking-wide text-amber-200">
+            <p className="flex items-center gap-2 font-heading text-base font-semibold uppercase tracking-wide text-gold">
               <TriangleAlert className="size-5 shrink-0" aria-hidden="true" />
-              {registerDay! < ticketDay
-                ? `O caixa de ${dayLabel(registerDay!)} ainda está aberto`
-                : `Esta comanda é de ${dayLabel(ticketDay)}`}
+              Esta comanda é de {dayLabel(ticketDay)}
             </p>
-            <p className="text-sm leading-relaxed text-amber-100/90">
+            <p className="text-sm leading-relaxed text-cream/90">
               {registerDay! < ticketDay ? (
                 <>
-                  Esta comanda é de <strong className="font-medium text-amber-50">{dayLabel(ticketDay)}</strong> e só
-                  pode ser recebida no caixa desse dia. Feche o caixa de {dayLabel(registerDay!)} e abra o caixa de{" "}
-                  {dayLabel(ticketDay)} para receber. Salvar as alterações continua liberado.
+                  O caixa de <strong className="font-medium text-cream">{dayLabel(registerDay!)}</strong> ainda está
+                  aberto, e esta comanda só pode ser recebida no caixa de {dayLabel(ticketDay)}. Feche o caixa atual
+                  e abra o caixa de {dayLabel(ticketDay)} para receber. Salvar as alterações continua liberado.
                 </>
               ) : (
                 <>
-                  O caixa aberto é de <strong className="font-medium text-amber-50">{dayLabel(registerDay!)}</strong>,
-                  mas esta comanda é de {dayLabel(ticketDay)}. Feche o caixa atual e reabra o caixa de{" "}
-                  {dayLabel(ticketDay)} pelo histórico para receber. Salvar as alterações continua liberado.
+                  O caixa aberto é de <strong className="font-medium text-cream">{dayLabel(registerDay!)}</strong>,
+                  mas esta comanda é de {dayLabel(ticketDay)} e só pode ser recebida no caixa desse dia. Feche o
+                  caixa atual e abra ou reabra o caixa de {dayLabel(ticketDay)} pelo histórico para receber. Salvar
+                  as alterações continua liberado.
                 </>
               )}
             </p>
@@ -1469,7 +1505,7 @@ export function TicketEditor({
             </Link>
           </div>
         ) : (
-          <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-100">
+          <p className="rounded-xl border border-gold/40 bg-gold/10 px-3 py-2.5 text-xs text-cream">
             Abra o caixa do dia para receber. A comanda pode ser salva antes.
           </p>
         )}
@@ -1482,9 +1518,14 @@ export function TicketEditor({
               : "flex shrink-0 flex-col gap-2 border-t border-gold/20 bg-[#12110e] px-4 py-3"
           }
         >
+          {payAlert && missingMethod ? (
+            <p role="alert" className="rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-xs leading-relaxed text-cream">
+              Escolha a forma de pagamento (Dinheiro, Pix, Débito ou Crédito) para fechar a comanda.
+            </p>
+          ) : null}
           {confirmFree ? (
             <div className="flex flex-col gap-2" role="alertdialog" aria-label="Confirmar comanda de graça">
-              <p className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
+              <p className="rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-xs leading-relaxed text-cream">
                 Esta comanda vai sair de graça: o desconto de {formatBRL(totals.discount)} cobre todo o subtotal.
               </p>
               <Button type="submit" variant="luxe" className="w-full" disabled={pending || coveredMissingBarber.length > 0}>

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireUnitArea } from "@/lib/auth/guards";
-import { packagePriceCents } from "@/lib/packages/math";
+import { packageEffectiveDiscountPct } from "@/lib/packages/math";
 import { getPackage, listCustomerPackages } from "@/lib/packages/queries";
 import type { PackageFormState } from "@/lib/packages/types";
 import { formatRetry, rateLimit } from "@/lib/rate-limit";
@@ -52,24 +52,50 @@ async function saveItems(
   return !error;
 }
 
-export async function createPackageAction(slug: string, _prev: PackageFormState, formData: FormData): Promise<PackageFormState> {
-  const { ctx, unit } = await requireUnitArea(slug, "pacotes");
-  const limited = throttled(ctx.userId, 120);
-  if (limited) return limited;
-
+function readPackageForm(formData: FormData) {
   const values: Record<string, string> = {
     name: str(formData, "name"),
     description: str(formData, "description"),
+    priceMode: str(formData, "priceMode"),
     discountPct: str(formData, "discountPct"),
+    fixedPrice: str(formData, "fixedPrice"),
     validityDays: str(formData, "validityDays"),
     items: str(formData, "items"),
   };
   const parsed = packageSchema.safeParse({
     name: values.name,
     description: values.description,
+    priceMode: values.priceMode,
     discountPct: values.discountPct,
+    fixedPrice: values.fixedPrice,
     validityDays: values.validityDays,
   });
+  return { values, parsed };
+}
+
+/** Soma cheia dos serviços escolhidos; null se algum não é desta unidade. */
+async function listTotalCents(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  unitId: string,
+  items: { serviceId: string; quantity: number }[],
+): Promise<number | null> {
+  const { data: svcs } = await supabase
+    .from("services")
+    .select("id, price_cents")
+    .eq("unit_id", unitId)
+    .in("id", items.map((i) => i.serviceId))
+    .returns<{ id: string; price_cents: number }[]>();
+  if ((svcs ?? []).length !== items.length) return null;
+  const priceById = new Map((svcs ?? []).map((s) => [s.id, s.price_cents]));
+  return items.reduce((n, i) => n + i.quantity * (priceById.get(i.serviceId) ?? 0), 0);
+}
+
+export async function createPackageAction(slug: string, _prev: PackageFormState, formData: FormData): Promise<PackageFormState> {
+  const { ctx, unit } = await requireUnitArea(slug, "pacotes");
+  const limited = throttled(ctx.userId, 120);
+  if (limited) return limited;
+
+  const { values, parsed } = readPackageForm(formData);
   const items = readItems(formData);
   if (!parsed.success) {
     return { status: "error", message: CHECK, values, fieldErrors: toFieldErrors(parsed.error) };
@@ -79,14 +105,22 @@ export async function createPackageAction(slug: string, _prev: PackageFormState,
   }
 
   const supabase = await createClient();
-  const { data: svcs } = await supabase
-    .from("services")
-    .select("id")
-    .eq("unit_id", unit.id)
-    .in("id", items.map((i) => i.serviceId))
-    .returns<{ id: string }[]>();
-  if ((svcs ?? []).length !== items.length) {
+  const listCents = await listTotalCents(supabase, unit.id, items);
+  if (listCents === null) {
     return { status: "error", message: CHECK, values, fieldErrors: { items: "Um dos serviços não pertence a esta unidade." } };
+  }
+  // No modo fixo, o desconto gravado é o implícito (foto coerente para exibição).
+  const discountPct =
+    parsed.data.priceMode === "fixo"
+      ? packageEffectiveDiscountPct(listCents, parsed.data.fixedPriceCents ?? 0)
+      : parsed.data.discountPct;
+  if (parsed.data.priceMode === "fixo" && (parsed.data.fixedPriceCents ?? 0) > listCents) {
+    return {
+      status: "error",
+      message: CHECK,
+      values,
+      fieldErrors: { fixedPrice: "O valor fixo não pode passar da soma dos serviços do pacote." },
+    };
   }
 
   const { data, error } = await supabase
@@ -95,7 +129,9 @@ export async function createPackageAction(slug: string, _prev: PackageFormState,
       unit_id: unit.id,
       name: parsed.data.name,
       description: parsed.data.description,
-      discount_pct: parsed.data.discountPct,
+      discount_pct: discountPct,
+      price_mode: parsed.data.priceMode,
+      fixed_price_cents: parsed.data.fixedPriceCents,
       validity_days: parsed.data.validityDays,
     })
     .select("id")
@@ -126,19 +162,7 @@ export async function updatePackageAction(
   if (limited) return limited;
   if (!UUID.test(packageId)) return { status: "error", message: GENERIC };
 
-  const values: Record<string, string> = {
-    name: str(formData, "name"),
-    description: str(formData, "description"),
-    discountPct: str(formData, "discountPct"),
-    validityDays: str(formData, "validityDays"),
-    items: str(formData, "items"),
-  };
-  const parsed = packageSchema.safeParse({
-    name: values.name,
-    description: values.description,
-    discountPct: values.discountPct,
-    validityDays: values.validityDays,
-  });
+  const { values, parsed } = readPackageForm(formData);
   const items = readItems(formData);
   if (!parsed.success) {
     return { status: "error", message: CHECK, values, fieldErrors: toFieldErrors(parsed.error) };
@@ -148,14 +172,21 @@ export async function updatePackageAction(
   }
 
   const supabase = await createClient();
-  const { data: svcs } = await supabase
-    .from("services")
-    .select("id")
-    .eq("unit_id", unit.id)
-    .in("id", items.map((i) => i.serviceId))
-    .returns<{ id: string }[]>();
-  if ((svcs ?? []).length !== items.length) {
+  const listCents = await listTotalCents(supabase, unit.id, items);
+  if (listCents === null) {
     return { status: "error", message: CHECK, values, fieldErrors: { items: "Um dos serviços não pertence a esta unidade." } };
+  }
+  const discountPct =
+    parsed.data.priceMode === "fixo"
+      ? packageEffectiveDiscountPct(listCents, parsed.data.fixedPriceCents ?? 0)
+      : parsed.data.discountPct;
+  if (parsed.data.priceMode === "fixo" && (parsed.data.fixedPriceCents ?? 0) > listCents) {
+    return {
+      status: "error",
+      message: CHECK,
+      values,
+      fieldErrors: { fixedPrice: "O valor fixo não pode passar da soma dos serviços do pacote." },
+    };
   }
 
   const { error } = await supabase
@@ -163,7 +194,9 @@ export async function updatePackageAction(
     .update({
       name: parsed.data.name,
       description: parsed.data.description,
-      discount_pct: parsed.data.discountPct,
+      discount_pct: discountPct,
+      price_mode: parsed.data.priceMode,
+      fixed_price_cents: parsed.data.fixedPriceCents,
       validity_days: parsed.data.validityDays,
     })
     .eq("id", packageId)
@@ -214,7 +247,7 @@ export async function sellPackageAction(slug: string, customerId: string, _prev:
   if (!pkg || !pkg.isActive || pkg.items.length === 0) return { status: "error", message: "Pacote não encontrado ou desativado." };
   if (!customer.data) return { status: "error", message: "Cliente não encontrado." };
 
-  const price = packagePriceCents(pkg.listCents, pkg.discountPct);
+  const price = pkg.priceCents;
 
   const { data: cp, error: cpError } = await supabase
     .from("customer_packages")

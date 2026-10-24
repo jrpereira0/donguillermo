@@ -3,10 +3,10 @@ import { ArrowRight, Layers, ReceiptText } from "lucide-react";
 import { startCustomerTicketAction } from "@/app/u/[slug]/pacotes/actions";
 import { buttonVariants } from "@/components/ui/button";
 import { Button } from "@/components/ui/button";
-import { LuxeFrame } from "@/components/ui/luxe-frame";
 import type { CustomerPackage, PackageUseEntry } from "@/lib/packages/types";
 import { formatBRL } from "@/lib/validation/service";
 import { CancelPackageButton } from "./cancel-package-button";
+import { EmptyState } from "./empty-state";
 import { FormSection } from "./form-parts";
 import { PackageStatusChip } from "./package-status";
 import { SellPackageForm } from "./sell-package-form";
@@ -125,15 +125,12 @@ export function CustomerPackages({
           )}
 
           {packages.length === 0 ? (
-            <LuxeFrame contentClassName="flex flex-col items-center px-6 py-8 text-center">
-              <span className="flex size-12 items-center justify-center rounded-full border border-gold/40 bg-[#101010] text-gold">
-                <Layers className="size-5" aria-hidden="true" />
-              </span>
-              <p className="mt-4 font-heading text-base uppercase tracking-wide">Nenhum pacote por aqui</p>
-              <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
-                Quando vender um pacote para este cliente, o saldo de cada serviço aparece aqui.
-              </p>
-            </LuxeFrame>
+            <EmptyState
+              size="section"
+              icon={Layers}
+              title="Nenhum pacote por aqui"
+              description="Quando vender um pacote para este cliente, o saldo de cada serviço aparece aqui."
+            />
           ) : (
             <ul className="flex flex-col gap-3">
               {packages.map((cp) => (

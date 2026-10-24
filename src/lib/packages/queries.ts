@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { packagePriceCents } from "./math";
+import { packageEffectiveDiscountPct, packagePriceFor, type PackagePriceMode } from "./math";
 import type {
   CustomerPackage,
   CustomerPackageStatus,
@@ -14,6 +14,8 @@ type TemplateRow = {
   name: string;
   description: string | null;
   discount_pct: number;
+  price_mode: string;
+  fixed_price_cents: number | null;
   validity_days: number | null;
   is_active: boolean;
   package_items: { service_id: string; quantity: number; position: number; services: { name: string; price_cents: number } | null }[];
@@ -29,22 +31,26 @@ function toTemplate(r: TemplateRow, buyersCount: number): PackageTemplate {
       unitPriceCents: i.services?.price_cents ?? 0,
     }));
   const listCents = items.reduce((n, i) => n + i.quantity * i.unitPriceCents, 0);
+  const priceMode: PackagePriceMode = r.price_mode === "fixo" ? "fixo" : "desconto";
+  const priceCents = packagePriceFor(listCents, priceMode, Number(r.discount_pct), r.fixed_price_cents);
   return {
     id: r.id,
     name: r.name,
     description: r.description,
-    discountPct: Number(r.discount_pct),
+    priceMode,
+    fixedPriceCents: r.fixed_price_cents,
+    discountPct: priceMode === "fixo" ? packageEffectiveDiscountPct(listCents, priceCents) : Number(r.discount_pct),
     validityDays: r.validity_days,
     isActive: r.is_active,
     items,
     listCents,
-    priceCents: packagePriceCents(listCents, Number(r.discount_pct)),
+    priceCents,
     buyersCount,
   };
 }
 
 const TEMPLATE_SELECT =
-  "id, name, description, discount_pct, validity_days, is_active, package_items(service_id, quantity, position, services(name, price_cents))";
+  "id, name, description, discount_pct, price_mode, fixed_price_cents, validity_days, is_active, package_items(service_id, quantity, position, services(name, price_cents))";
 
 export async function listPackages(unitId: string): Promise<PackageTemplate[]> {
   const supabase = await createClient();

@@ -70,6 +70,9 @@ export type TicketLine = {
 export type TicketPackageOption = {
   customerPackageId: string;
   packageName: string;
+  /** Preço pago no pacote e total de serviços, para a cota de faturamento. */
+  priceCents: number;
+  totalServices: number;
   items: { serviceId: string; serviceName: string; quantityTotal: number; remaining: number; unitPriceCents: number }[];
 };
 

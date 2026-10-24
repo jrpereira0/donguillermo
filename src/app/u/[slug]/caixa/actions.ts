@@ -7,7 +7,7 @@ import { requireUnitArea } from "@/lib/auth/guards";
 import { expectedCash, PAY_METHODS, type PayMethod } from "@/lib/caixa/math";
 import { getOpenRegister, getTicket, listCatalog } from "@/lib/caixa/queries";
 import type { CatalogBarber, CatalogProduct, CatalogService, TicketDetail, TicketPackageOption, TicketPackageSaleOption } from "@/lib/caixa/types";
-import { packagePriceCents } from "@/lib/packages/math";
+import { packageServiceShareCents } from "@/lib/packages/math";
 import { getPackage, listCustomerPackages, listPackages } from "@/lib/packages/queries";
 import { formatRetry, rateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
@@ -334,13 +334,14 @@ export async function saveTicketAction(slug: string, ticketId: string, _prev: Fo
   const supabase = await createClient();
   const sold = await materializePackageSales(supabase, unit.id, ticketId, payload.items);
   if ("error" in sold) return fail(sold.error);
+  const items = await applyPackageProductionPrice(supabase, unit.id, sold.items);
   const { error } = await supabase.rpc("save_open_ticket", {
     p_id: ticketId,
     p_discount: payload.discount,
     p_tip: payload.tip,
     p_notes: payload.notes,
     p_barber: payload.barberId,
-    p_items: sold.items,
+    p_items: items,
     p_tips: payload.tips,
   });
   if (error) {
@@ -363,12 +364,13 @@ export async function chargeTicketAction(slug: string, ticketId: string, _prev: 
   const supabase = await createClient();
   const sold = await materializePackageSales(supabase, unit.id, ticketId, payload.items);
   if ("error" in sold) return fail(sold.error);
+  const items = await applyPackageProductionPrice(supabase, unit.id, sold.items);
   const { error } = await supabase.rpc("charge_ticket", {
     p_id: ticketId,
     p_discount: payload.discount,
     p_tip: payload.tip,
     p_barber: payload.barberId,
-    p_items: sold.items,
+    p_items: items,
     p_payments: payload.payments,
     p_tips: payload.tips,
   });
@@ -510,7 +512,7 @@ async function materializePackageSales(
     if (!item.package_id) return { error: "Escolha o pacote para vender." };
     const pkg = await getPackage(unitId, item.package_id);
     if (!pkg || !pkg.isActive || !pkg.items.length) return { error: "Pacote não encontrado ou desativado." };
-    const price = packagePriceCents(pkg.listCents, pkg.discountPct);
+    const price = pkg.priceCents;
     const { data: cp, error: cpError } = await supabase
       .from("customer_packages")
       .insert({
@@ -577,6 +579,38 @@ async function materializePackageSales(
   return { items: out };
 }
 
+/**
+ * Serviço usado de pacote entra no faturamento pela cota: preço pago no pacote
+ * ÷ quantidade de serviços. O valor que o cliente vê na comanda continua R$ 0
+ * (já pago na venda); esta cota é só a produção do profissional.
+ */
+async function applyPackageProductionPrice(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  unitId: string,
+  items: PayloadItem[],
+): Promise<PayloadItem[]> {
+  const ids = [
+    ...new Set(items.filter((i) => i.kind === "servico" && i.customer_package_id).map((i) => i.customer_package_id!)),
+  ];
+  if (!ids.length) return items;
+  const { data } = await supabase
+    .from("customer_packages")
+    .select("id, price_cents, customer_package_items(quantity_total)")
+    .eq("unit_id", unitId)
+    .in("id", ids)
+    .returns<{ id: string; price_cents: number; customer_package_items: { quantity_total: number }[] | null }[]>();
+  const share = new Map<string, number>();
+  for (const cp of data ?? []) {
+    const total = (cp.customer_package_items ?? []).reduce((n, i) => n + i.quantity_total, 0);
+    share.set(cp.id, packageServiceShareCents(cp.price_cents, total));
+  }
+  return items.map((i) => {
+    if (i.kind !== "servico" || !i.customer_package_id) return i;
+    const cents = share.get(i.customer_package_id);
+    return cents == null ? i : { ...i, unit_price_cents: cents };
+  });
+}
+
 export async function usablePackages(unitId: string, ticket: TicketDetail): Promise<TicketPackageOption[]> {
   if (!ticket.customerId) return [];
   const cps = await listCustomerPackages(unitId, ticket.customerId, {
@@ -586,6 +620,8 @@ export async function usablePackages(unitId: string, ticket: TicketDetail): Prom
   return cps.map((cp) => ({
     customerPackageId: cp.id,
     packageName: cp.packageName,
+    priceCents: cp.priceCents,
+    totalServices: cp.totalServices,
     items: cp.items
       .filter((i) => i.serviceId)
       .map((i) => ({

@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight, Layers, Plus, Users } from "lucide-react";
+import { EmptyState } from "@/components/unit/empty-state";
 import { PageHeader } from "@/components/unit/page-header";
 import { buttonVariants } from "@/components/ui/button";
-import { LuxeFrame } from "@/components/ui/luxe-frame";
+import { StatusPill } from "@/components/ui/status-pill";
 import { FlashNotice } from "@/components/ui/notice";
 import { requireUnitArea } from "@/lib/auth/guards";
 import { listPackages } from "@/lib/packages/queries";
@@ -40,7 +41,7 @@ export default async function PacotesPage({
       <PageHeader
         eyebrow="Catálogo"
         title="Pacotes"
-        description="Pacotes pré-pagos: o cliente compra os serviços com desconto, paga uma vez e usa nas próximas visitas sem pagar de novo. Venda e acompanhe o saldo na ficha do cliente."
+        description="Pacotes de serviços vendidos aos clientes."
         action={packages.length ? newButton : undefined}
       />
 
@@ -49,21 +50,12 @@ export default async function PacotesPage({
       ) : null}
 
       {packages.length === 0 ? (
-        <LuxeFrame
-          className="reveal"
-          style={{ "--d": "150ms" } as React.CSSProperties}
-          contentClassName="flex flex-col items-center px-6 py-12 text-center sm:py-14"
-        >
-          <span className="relative flex size-16 items-center justify-center rounded-full border border-gold/40 bg-[#101010] text-gold shadow-[0_0_32px_rgb(192_160_98/0.2)]">
-            <Layers className="size-7" aria-hidden="true" />
-          </span>
-          <p className="mt-6 font-heading text-xl uppercase tracking-wide">Monte o primeiro pacote</p>
-          <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            Escolha os serviços (ex.: 4 cortes), dê um desconto em % e venda para o cliente. Nas próximas visitas ele
-            usa o saldo do pacote na comanda, sem pagar de novo.
-          </p>
-          <div className="mt-6 w-full sm:w-auto">{newButton}</div>
-        </LuxeFrame>
+        <EmptyState
+          icon={Layers}
+          title="Monte o primeiro pacote"
+          description="Escolha os serviços (ex.: 4 cortes), dê um desconto em % e venda para o cliente. Nas próximas visitas ele usa o saldo do pacote na comanda, sem pagar de novo."
+          action={newButton}
+        />
       ) : (
         <section className="overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-[#262626]/85 to-[#161616]/90 shadow-[inset_0_1px_0_rgb(242_237_228/0.06)]">
           <header className="flex items-center gap-3 border-b border-border/80 bg-black/20 px-4 py-3 sm:px-5">
@@ -87,16 +79,8 @@ export default async function PacotesPage({
                   <span className="min-w-0">
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="font-heading text-base font-semibold uppercase tracking-wide text-cream">{p.name}</span>
-                      {!p.isActive ? (
-                        <span className="label-caps rounded-full border border-border bg-black/30 px-2 py-0.5 text-[0.55rem] text-muted-foreground">
-                          Desativado
-                        </span>
-                      ) : null}
-                      {p.discountPct > 0 ? (
-                        <span className="label-caps rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[0.55rem] text-gold">
-                          −{fmtPct(p.discountPct)}
-                        </span>
-                      ) : null}
+                      {!p.isActive ? <StatusPill tone="muted">Desativado</StatusPill> : null}
+                      {p.discountPct > 0 ? <StatusPill tone="gold">−{fmtPct(p.discountPct)}</StatusPill> : null}
                     </span>
                     <span className="mt-1 block truncate text-sm text-muted-foreground">
                       {p.items.map((i) => `${i.quantity}× ${i.serviceName}`).join(" · ") || "Sem serviços"}
@@ -120,11 +104,6 @@ export default async function PacotesPage({
           </ul>
         </section>
       )}
-
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Para vender: abra a ficha do cliente, aba <strong className="font-medium text-cream">Pacotes</strong>, e escolha o
-        pacote — abre a comanda da venda e, ao cobrar, o pacote fica ativo para ele usar nas próximas visitas.
-      </p>
     </div>
   );
 }

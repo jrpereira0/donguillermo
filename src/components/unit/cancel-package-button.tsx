@@ -9,7 +9,7 @@ export function CancelPackageButton({ slug, customerPackageId }: { slug: string;
   const [confirm, setConfirm] = useState(false);
   if (!confirm) {
     return (
-      <Button type="button" variant="ghost" size="sm" className="text-muted-foreground hover:text-rose-300" onClick={() => setConfirm(true)}>
+      <Button type="button" variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={() => setConfirm(true)}>
         <Ban />
         Cancelar pacote
       </Button>
@@ -17,7 +17,7 @@ export function CancelPackageButton({ slug, customerPackageId }: { slug: string;
   }
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-amber-200">Cancelar este pacote? O estorno do valor é feito à parte, no caixa.</span>
+      <span className="text-xs text-gold">Cancelar este pacote? O estorno do valor é feito à parte, no caixa.</span>
       <form action={cancelCustomerPackageAction.bind(null, slug, customerPackageId)}>
         <Button type="submit" variant="destructive" size="sm">
           Sim, cancelar

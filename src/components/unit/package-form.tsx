@@ -9,9 +9,9 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { Textarea } from "@/components/ui/textarea";
-import { packagePriceCents, parsePercentBR } from "@/lib/packages/math";
+import { packagePriceCents, parsePercentBR, type PackagePriceMode } from "@/lib/packages/math";
 import { initialPackageState } from "@/lib/packages/types";
-import { formatBRL } from "@/lib/validation/service";
+import { formatBRL, maskMoney, moneyToCents } from "@/lib/validation/service";
 import { cn } from "@/lib/utils";
 import { Field, FormSection } from "./form-parts";
 
@@ -19,7 +19,9 @@ export type PackageServiceOption = { id: string; name: string; priceCents: numbe
 export type PackageDefaults = {
   name: string;
   description: string;
+  priceMode: PackagePriceMode;
   discountPct: string;
+  fixedPrice: string;
   validityDays: string;
   items: { serviceId: string; quantity: number }[];
 };
@@ -27,7 +29,9 @@ export type PackageDefaults = {
 export const EMPTY_PACKAGE_DEFAULTS: PackageDefaults = {
   name: "",
   description: "",
+  priceMode: "desconto",
   discountPct: "10",
+  fixedPrice: "",
   validityDays: "",
   items: [],
 };
@@ -54,11 +58,15 @@ export function PackageForm({
   );
   const [closedNotice, setClosedNotice] = useState<unknown>(null);
   const fe = state.fieldErrors ?? {};
-  const val = (k: "name" | "description" | "discountPct" | "validityDays") => state.values?.[k] ?? defaults[k];
+  const val = (k: "name" | "description" | "discountPct" | "fixedPrice" | "validityDays") => state.values?.[k] ?? defaults[k];
 
   const [name, setName] = useState(val("name"));
   const [description, setDescription] = useState(val("description"));
+  const [priceMode, setPriceMode] = useState<PackagePriceMode>(
+    () => (state.values?.priceMode === "fixo" ? "fixo" : defaults.priceMode),
+  );
   const [discountPct, setDiscountPct] = useState(val("discountPct"));
+  const [fixedPrice, setFixedPrice] = useState(() => maskMoney(val("fixedPrice")));
   const [validityDays, setValidityDays] = useState(val("validityDays"));
   const [picked, setPicked] = useState<Map<string, number>>(
     () => new Map(defaults.items.map((i) => [i.serviceId, i.quantity])),
@@ -74,8 +82,14 @@ export function PackageForm({
   const listCents = chosen.reduce((n, s) => n + s.quantity * s.priceCents, 0);
   const pct = parsePercentBR(discountPct);
   const pctValid = Number.isFinite(pct) && pct >= 0 && pct <= 90;
-  // Sem desconto válido digitado, a prévia mostra o valor cheio (não R$ 0,00).
-  const priceCents = pctValid ? packagePriceCents(listCents, pct) : listCents;
+  const fixedCents = moneyToCents(fixedPrice);
+  // Sem valor válido digitado, a prévia mostra o valor cheio (não R$ 0,00).
+  const priceCents =
+    priceMode === "fixo"
+      ? (fixedCents ?? listCents)
+      : pctValid
+        ? packagePriceCents(listCents, pct)
+        : listCents;
   const totalServices = chosen.reduce((n, s) => n + s.quantity, 0);
 
   const itemsJson = JSON.stringify(chosen.map((s) => ({ serviceId: s.id, quantity: s.quantity })));
@@ -203,31 +217,76 @@ export function PackageForm({
           {fe.items ? <p className="mt-3 text-sm text-destructive">{fe.items}</p> : null}
         </FormSection>
 
-        <FormSection icon={Wallet} title="Desconto e validade" description="O cliente paga o pacote uma vez, com o desconto; depois só usa.">
+        <FormSection icon={Wallet} title="Preço e validade" description="O cliente paga o pacote uma vez; depois só usa.">
+          <input type="hidden" name="priceMode" value={priceMode} />
           <div className="grid gap-5 sm:grid-cols-2">
-            <Field id="discountPct" label="Desconto do pacote (%)" error={fe.discountPct} hint="Sobre a soma dos serviços. Ex.: 20. Máximo de 90%.">
-              <div className="group relative max-w-[10rem]">
-                <Input
-                  id="discountPct"
-                  name="discountPct"
-                  inputMode="decimal"
-                  className="field-luxe pr-10"
-                  value={discountPct}
-                  onChange={(e) => {
-                    // Limita já na digitação: acima de 90% trava em 90 (o servidor
-                    // aceita de 0 a 90; digitar "10120" não pode passar).
-                    const clean = e.target.value.replace(/[^\d,]/g, "").slice(0, 6);
-                    const n = parsePercentBR(clean);
-                    setDiscountPct(Number.isFinite(n) && n > 90 ? "90" : clean);
-                  }}
-                  placeholder="10"
-                  aria-invalid={!!fe.discountPct}
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-center text-sm text-muted-foreground">
-                  %
-                </span>
+            <div className="flex flex-col gap-2">
+              <span className="label-caps text-[0.65rem]">Valor do pacote</span>
+              <div className="grid max-w-xs grid-cols-2 overflow-hidden rounded-lg border border-border" role="group" aria-label="Como definir o valor do pacote">
+                {(
+                  [
+                    { value: "desconto", label: "Desconto (%)" },
+                    { value: "fixo", label: "Valor fixo (R$)" },
+                  ] as const
+                ).map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    aria-pressed={priceMode === o.value}
+                    onClick={() => setPriceMode(o.value)}
+                    className={cn(
+                      "h-10 cursor-pointer border-r border-border text-xs last:border-r-0",
+                      priceMode === o.value ? "bg-gold font-medium text-[#1a1408]" : "bg-black/20 text-muted-foreground hover:text-cream",
+                    )}
+                  >
+                    {o.label}
+                  </button>
+                ))}
               </div>
-            </Field>
+              {priceMode === "desconto" ? (
+                <Field id="discountPct" label="Desconto do pacote (%)" error={fe.discountPct} hint="Sobre a soma dos serviços. Ex.: 20. Máximo de 90%.">
+                  <div className="group relative max-w-[10rem]">
+                    <Input
+                      id="discountPct"
+                      name="discountPct"
+                      inputMode="decimal"
+                      className="field-luxe pr-10"
+                      value={discountPct}
+                      onChange={(e) => {
+                        // Limita já na digitação: acima de 90% trava em 90 (o servidor
+                        // aceita de 0 a 90; digitar "10120" não pode passar).
+                        const clean = e.target.value.replace(/[^\d,]/g, "").slice(0, 6);
+                        const n = parsePercentBR(clean);
+                        setDiscountPct(Number.isFinite(n) && n > 90 ? "90" : clean);
+                      }}
+                      placeholder="10"
+                      aria-invalid={!!fe.discountPct}
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-center text-sm text-muted-foreground">
+                      %
+                    </span>
+                  </div>
+                </Field>
+              ) : (
+                <Field id="fixedPrice" label="Valor fixo do pacote" error={fe.fixedPrice} hint="Valor fechado, sem passar da soma dos serviços.">
+                  <div className="group relative max-w-[10rem]">
+                    <span className="pointer-events-none absolute inset-y-0 left-0 flex w-9 items-center justify-center text-sm text-muted-foreground">
+                      R$
+                    </span>
+                    <Input
+                      id="fixedPrice"
+                      name="fixedPrice"
+                      inputMode="decimal"
+                      className="field-luxe pl-10"
+                      value={fixedPrice}
+                      onChange={(e) => setFixedPrice(maskMoney(e.target.value))}
+                      placeholder="0,00"
+                      aria-invalid={!!fe.fixedPrice}
+                    />
+                  </div>
+                </Field>
+              )}
+            </div>
             <Field id="validityDays" label="Validade (dias, opcional)" error={fe.validityDays} hint="Conta da cobrança da venda. Vazio = sem validade.">
               <Input
                 id="validityDays"
@@ -257,7 +316,7 @@ export function PackageForm({
               </p>
             </div>
             <div className="text-right">
-              {pctValid && pct > 0 && listCents ? (
+              {listCents && priceCents < listCents ? (
                 <p className="text-xs tabular-nums text-muted-foreground line-through">{formatBRL(listCents)}</p>
               ) : null}
               <p className="font-heading text-xl font-semibold tabular-nums text-gold">

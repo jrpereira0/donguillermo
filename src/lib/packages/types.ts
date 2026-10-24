@@ -15,6 +15,11 @@ export type PackageTemplate = {
   id: string;
   name: string;
   description: string | null;
+  /** Como o preço foi definido no cadastro: % de desconto ou valor fixo. */
+  priceMode: "desconto" | "fixo";
+  /** Valor fixo definido (só no modo 'fixo'). */
+  fixedPriceCents: number | null;
+  /** Desconto efetivo (%): no modo fixo, o implícito sobre a soma. */
   discountPct: number;
   validityDays: number | null;
   isActive: boolean;
