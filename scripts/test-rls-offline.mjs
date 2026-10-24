@@ -603,5 +603,30 @@ r = await q("select id from customer_notes"); check("recepção B perde acesso �
 await as(adm);
 r = await q("select id from units where id=$1", [B]); check("admin ainda vê", r.rows.length === 1);
 
+console.log("\n[tabela de comissão: troca atômica]");
+const BR = "select public.replace_commission_brackets($1::jsonb) as n";
+const brCount = async () => { await asServer(); return (await db.query("select count(*)::int c from commission_brackets")).rows[0].c; };
+const before = await brCount();
+await as(recepA);
+r = await q(BR, [JSON.stringify([{ min_cents: 0, max_cents: null, pct: 50 }])]); check("recepção NÃO troca a tabela", !!r.err);
+check("tabela intacta após recusa da recepção", (await brCount()) === before, before);
+await as(adm);
+r = await q(BR, [JSON.stringify([{ min_cents: 0, max_cents: 1000, pct: 20 }, { min_cents: 5000, max_cents: null, pct: 30 }])]);
+check("tabela com buraco é rejeitada", !!r.err);
+r = await q(BR, [JSON.stringify([{ min_cents: 0, max_cents: 1000, pct: 20 }, { min_cents: 1001, max_cents: null, pct: 130 }])]);
+check("percentual acima de 100 é rejeitado", !!r.err);
+r = await q(BR, [JSON.stringify([])]); check("tabela vazia é rejeitada", !!r.err);
+check("falha no meio NÃO apaga a tabela anterior", (await brCount()) === before, before);
+await as(adm);
+r = await q(BR, [JSON.stringify([{ min_cents: 0, max_cents: 1000, pct: 20 }, { min_cents: 1001, max_cents: null, pct: 30.5 }])]);
+check("admin troca a tabela inteira", r.rows[0]?.n === 2 && !r.err, r.err);
+check("tabela nova tem só as 2 faixas", (await brCount()) === 2);
+
+console.log("\n[saldo de pacote: trava]");
+await asServer();
+r = await q("select prosrc from pg_proc where proname = 'replace_ticket_items'");
+check("replace_ticket_items trava os pacotes (for update) antes de conferir o saldo",
+  /customer_packages[\s\S]*for update[\s\S]*delete from public\.ticket_items/.test(r.rows[0]?.prosrc ?? ""));
+
 console.log(`\n${total - fail}/${total} ok`);
 process.exit(fail ? 1 : 0);

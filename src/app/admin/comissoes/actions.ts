@@ -22,17 +22,15 @@ export async function saveCommissionBracketsAction(input: CommissionBracket[]): 
   const error = validateBrackets(rows);
   if (error) return { ok: false, message: error };
 
+  // Troca atômica no banco: apaga e insere na mesma transação — se algo falhar,
+  // a tabela anterior continua valendo (nunca fica vazia).
   const supabase = await createClient();
-  const { error: delError } = await supabase.from("commission_brackets").delete().gte("min_cents", 0);
-  if (delError) {
-    console.error("[admin] brackets delete:", delError.code);
-    return { ok: false, message: "Não foi possível salvar a tabela. Tente novamente." };
-  }
-  const { error: insError } = await supabase.from("commission_brackets").insert(
-    rows.map((r) => ({ min_cents: r.minCents, max_cents: r.maxCents, pct: r.pct })),
-  );
-  if (insError) {
-    console.error("[admin] brackets insert:", insError.code);
+  const { error: rpcError } = await supabase.rpc("replace_commission_brackets", {
+    p_rows: rows.map((r) => ({ min_cents: r.minCents, max_cents: r.maxCents, pct: r.pct })),
+  });
+  if (rpcError) {
+    console.error("[admin] brackets replace:", rpcError.code);
+    if (rpcError.code === "22023" && rpcError.message) return { ok: false, message: rpcError.message };
     return { ok: false, message: "Não foi possível salvar a tabela. Tente novamente." };
   }
   revalidatePath("/admin/comissoes");
