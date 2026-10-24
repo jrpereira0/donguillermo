@@ -564,49 +564,51 @@ input:autofill {
 }
 
 /*
- * PADRÃO DE ROLAGEM (`.scroll-luxe`): barra fina e arredondada em dourado
- * discreto sobre trilho transparente. Some visualmente no meio do conteúdo
- * escuro e ganha presença no hover. Usar em toda área rolável do sistema
- * (modais, listas, painéis) em vez da barra padrão do navegador.
+ * PADRÃO DE ROLAGEM DO SISTEMA: barra fina e arredondada em dourado discreto
+ * sobre trilho transparente, aplicada a TODAS as áreas roláveis (página,
+ * modais, listas, painéis, menus) — um padrão só, sem a barra padrão do
+ * navegador em lugar nenhum. Áreas que escondem a barra de propósito usam
+ * utilitário próprio (ex.: `[&::-webkit-scrollbar]:hidden`), que prevalece.
  * Fora de @layer pelo mesmo motivo do `.field-luxe`.
- */
-.scroll-luxe {
-  scrollbar-gutter: stable;
-  overscroll-behavior: contain;
-}
-/*
+ *
  * Chrome/Edge: NÃO definir `scrollbar-width`/`scrollbar-color` aqui. Com essas
  * propriedades o Chromium descarta os pseudo-elementos abaixo e volta à barra
  * padrão do sistema (grossa, cinza, com setas).
  */
-.scroll-luxe::-webkit-scrollbar {
+::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-.scroll-luxe::-webkit-scrollbar-button {
+::-webkit-scrollbar-button {
   width: 0;
   height: 0;
   display: none;
 }
-.scroll-luxe::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: transparent;
 }
-.scroll-luxe::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: linear-gradient(180deg, rgb(205 176 120 / 0.55), rgb(192 160 98 / 0.28));
 }
-.scroll-luxe:hover::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgb(205 176 120 / 0.85), rgb(192 160 98 / 0.5));
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgb(205 176 120 / 0.9), rgb(192 160 98 / 0.55));
 }
-.scroll-luxe::-webkit-scrollbar-corner {
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 /* Firefox: sem pseudo-elementos, usa as propriedades padrão. */
 @-moz-document url-prefix() {
-  .scroll-luxe {
+  * {
     scrollbar-width: thin;
     scrollbar-color: rgb(192 160 98 / 0.35) transparent;
   }
+}
+/* `.scroll-luxe` continua existindo para reservar o espaço da barra e conter
+ * a rolagem (modais e listas que não devem “vazar” o scroll para a página). */
+.scroll-luxe {
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 /* ==========================================================================
@@ -655,6 +657,49 @@ input:autofill {
   .sidebar-edge::after {
     animation: none;
     background-position: 0 12%;
+  }
+}
+
+/* Luz dourada que corre pela borda TODA da aba do caixa (agenda), igual à
+ * luz da borda da sidebar — mas contornando o botão inteiro. */
+@property --cash-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.cash-tab-edge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--cash-angle),
+    transparent 0deg,
+    transparent 255deg,
+    rgb(222 195 135 / 0.95) 315deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  filter: drop-shadow(0 0 4px rgb(222 195 135 / 0.45));
+  animation: cash-border-run 5s linear infinite;
+}
+@keyframes cash-border-run {
+  to {
+    --cash-angle: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cash-tab-edge::after {
+    animation: none;
   }
 }
 

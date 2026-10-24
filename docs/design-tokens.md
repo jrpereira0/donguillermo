@@ -120,7 +120,9 @@ As telas de `/u/<slug>/*` usam estas peças. Antes de criar outra, reaproveite.
 | `PhotoUploader` + `PhotoCropper` | `src/components/unit/` | Envio de foto com recorte, compressão em WebP e caminho configurável (`buildPath`) para cada bucket |
 | `Notice` / `FlashNotice` | `src/components/ui/notice.tsx` | Aviso de sucesso que aparece no canto, fecha sozinho e tem botão de fechar. `FlashNotice` lê `?aviso=` depois de um redirecionamento (ex.: cadastro criado) |
 | `FormAlert` | `src/components/auth/` | Aviso dentro do formulário (erro, sucesso, informação) |
-| `LuxeFrame` | `src/components/ui/luxe-frame.tsx` | Estados vazios e cartões de destaque ("Nenhum cliente cadastrado") |
+| `StatusPill` / `ActiveStatus` | `src/components/ui/status-pill.tsx` | Selo de status. Tons: `success` (ativo, pago, bateu), `gold` (atenção, aberto, aguardando), `muted` (inativo, cancelado) e `danger` (vencido, falta). `ActiveStatus` é o par Ativo/Inativo |
+| `EmptyState` | `src/components/unit/empty-state.tsx` | Estado vazio: círculo dourado, título e texto. `size="page"` no catálogo vazio; `size="section"` dentro de aba ou lista. `framed={false}` quando já está dentro de um cartão |
+| `LuxeFrame` | `src/components/ui/luxe-frame.tsx` | Cartão de destaque. O estado vazio usa esta moldura por dentro do `EmptyState` |
 
 Padrões de lista: **tabela** em telas largas (`xl`) e **cartões** no celular, com o link da linha cobrindo o cartão inteiro (`stretched link`) e os botões de ação por cima; busca no servidor com pausa antes de filtrar; selo de status (Ativo/Inativo) com `Badge`. Mensagens de sucesso de ações que não saem da página usam `Notice`; as que redirecionam usam `FlashNotice`.
 
@@ -132,7 +134,7 @@ Regras de texto: português correto com acentos, sem emojis, ícones de linha (l
 2. **Fontes**: edite `src/app/layout.tsx` (troque `Oswald`/`Montserrat`/`Inter`).
 3. **Logo e nome**: coloque o arquivo em `public/` e aponte em `src/config/brand.ts`: `logoSquareSrc` (logo quadrado, usado nas telas de acesso, hoje `/logobranco-quadrado.svg`) e `logoSrc` (logo horizontal para o cabeçalho; ainda `null`, o cabeçalho mostra o nome em texto).
 
-Nenhum componente usa cor fixa (hex) diretamente; todos usam tokens.
+As peças compartilhadas usam os tokens. Atenção é ouro, sucesso é o verde da marca e erro é o vermelho de alerta — sem âmbar, esmeralda ou rosa do Tailwind. A grade da agenda é a exceção: cada situação do horário (agendado, confirmado, em atendimento, concluído, cancelado) precisa de uma cor própria para a recepção distinguir de longe.
 
 ## Tema
 
