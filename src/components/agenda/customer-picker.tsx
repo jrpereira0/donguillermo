@@ -84,6 +84,17 @@ export function CustomerPicker({ slug, value, onChange, errors, disabled }: Prop
   }, [query, slug]);
 
   const set = (patch: Partial<CustomerChoice>) => onChange({ ...value, ...patch });
+
+  /** Erro do campo some assim que a pessoa começa a corrigir. */
+  const clearCreateError = (key: "firstName" | "lastName" | "phone") => {
+    setCreateMessage(null);
+    setCreateErrors((cur) => {
+      if (!(key in cur)) return cur;
+      const next = { ...cur };
+      delete next[key];
+      return next;
+    });
+  };
   const selectedPackageInfo = customerPackageInfo(value.selected);
 
   function openCreate() {
@@ -220,7 +231,10 @@ export function CustomerPicker({ slug, value, onChange, errors, disabled }: Prop
                   <Input
                     id="quickFirstName"
                     value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
+                    onChange={(e) => {
+                      setFirstName(e.target.value);
+                      clearCreateError("firstName");
+                    }}
                     maxLength={60}
                     autoComplete="off"
                     disabled={pending || disabled}
@@ -232,7 +246,10 @@ export function CustomerPicker({ slug, value, onChange, errors, disabled }: Prop
                   <Input
                     id="quickLastName"
                     value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
+                    onChange={(e) => {
+                      setLastName(e.target.value);
+                      clearCreateError("lastName");
+                    }}
                     maxLength={60}
                     autoComplete="off"
                     disabled={pending || disabled}
@@ -246,7 +263,10 @@ export function CustomerPicker({ slug, value, onChange, errors, disabled }: Prop
                   type="tel"
                   inputMode="tel"
                   value={phone}
-                  onChange={(e) => setPhone(maskPhone(e.target.value))}
+                  onChange={(e) => {
+                    setPhone(maskPhone(e.target.value));
+                    clearCreateError("phone");
+                  }}
                   placeholder="(11) 91234-5678"
                   autoComplete="off"
                   disabled={pending || disabled}

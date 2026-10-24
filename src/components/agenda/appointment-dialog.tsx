@@ -283,7 +283,18 @@ function NewAppointmentWizard({
     if (step === "horario") onRefresh();
   }, [step, onRefresh]);
 
-  const errors = state.fieldErrors ?? {};
+  // Erros do servidor somem assim que o campo é corrigido — não esperam o próximo envio.
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setErrors(state.fieldErrors ?? {});
+  }, [state]);
+  const clearError = (...keys: string[]) =>
+    setErrors((cur) => {
+      if (!keys.some((k) => k in cur)) return cur;
+      const next = { ...cur };
+      for (const k of keys) delete next[k];
+      return next;
+    });
   const barber = barbers.find((b) => b.id === barberId);
   const barberOffers = useMemo(() => offers[barberId] ?? {}, [offers, barberId]);
 
@@ -401,6 +412,7 @@ function NewAppointmentWizard({
   function changeBarber(id: string) {
     setNoPreference(false);
     setBarberId(id);
+    clearError("barberId");
     setTime("");
     const next = offers[id] ?? {};
     setPicked((cur) => cur.filter((sid) => sid in next));
@@ -408,6 +420,7 @@ function NewAppointmentWizard({
 
   function toggle(id: string) {
     setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+    clearError("serviceIds");
   }
 
   function goNext() {
@@ -499,10 +512,19 @@ function NewAppointmentWizard({
           {/* Cliente fica montado (oculto nos outros passos) para os campos irem no submit. */}
           <section className={cn("flex flex-col gap-3", step !== "cliente" && "hidden")}>
             <StepHeading title="Quem é o cliente?" hint="Busque na base ou cadastre na hora." />
-            <CustomerPicker slug={slug} value={customer} onChange={setCustomer} errors={errors} />
+            <CustomerPicker
+              slug={slug}
+              value={customer}
+              onChange={(c) => {
+                setCustomer(c);
+                clearError("customerId");
+              }}
+              errors={errors}
+            />
             <NoPreferenceSwitch
               checked={noPreference}
               onCheckedChange={(on) => {
+                clearError("barberId", "time");
                 if (on) {
                   setNoPreference(true);
                   if (!fromGrid) {
@@ -589,6 +611,7 @@ function NewAppointmentWizard({
                   onChange={(iso) => {
                     setDate(iso);
                     setTime("");
+                    clearError("date", "time");
                   }}
                 />
               </Field>
@@ -643,6 +666,7 @@ function NewAppointmentWizard({
                             type="button"
                             onClick={() => {
                               setTime(t);
+                              clearError("time");
                               if (noPreference) setBarberId(assignBarberForTime(t));
                             }}
                             className={cn(
@@ -760,7 +784,10 @@ function NewAppointmentWizard({
                 <Textarea
                   id="notes"
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={(e) => {
+                    setNotes(e.target.value);
+                    clearError("notes");
+                  }}
                   maxLength={NOTES_MAX}
                   rows={2}
                   placeholder="Ex.: prefere a máquina no 2."
@@ -1103,7 +1130,18 @@ function EditAppointmentWizard({
     };
   }, [slug, entry.customerId, customer.selected?.packages]);
 
-  const errors = state.fieldErrors ?? {};
+  // Erros do servidor somem assim que o campo é corrigido — não esperam o próximo envio.
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setErrors(state.fieldErrors ?? {});
+  }, [state]);
+  const clearError = (...keys: string[]) =>
+    setErrors((cur) => {
+      if (!keys.some((k) => k in cur)) return cur;
+      const next = { ...cur };
+      for (const k of keys) delete next[k];
+      return next;
+    });
   const barber = barbers.find((b) => b.id === barberId);
   const barberOffers = useMemo(() => offers[barberId] ?? {}, [offers, barberId]);
   const keepServices = useMemo(() => new Set(entry.services.map((s) => s.serviceId)), [entry]);
@@ -1228,12 +1266,14 @@ function EditAppointmentWizard({
   function changeBarber(id: string) {
     setNoPreference(false);
     setBarberId(id);
+    clearError("barberId");
     const next = offers[id] ?? {};
     setPicked((cur) => cur.filter((sid) => sid in next || keepServices.has(sid)));
   }
 
   function toggle(id: string) {
     setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+    clearError("serviceIds");
   }
 
   function goNext() {
@@ -1315,10 +1355,19 @@ function EditAppointmentWizard({
         <fieldset disabled={pending} className="flex min-w-0 flex-col gap-5 disabled:opacity-90">
           <section className={cn("flex flex-col gap-3", step !== "cliente" && "hidden")}>
             <StepHeading title="Quem é o cliente?" hint="Troque o cliente ou a preferência de profissional." />
-            <CustomerPicker slug={slug} value={customer} onChange={setCustomer} errors={errors} />
+            <CustomerPicker
+              slug={slug}
+              value={customer}
+              onChange={(c) => {
+                setCustomer(c);
+                clearError("customerId");
+              }}
+              errors={errors}
+            />
             <NoPreferenceSwitch
               checked={noPreference}
               onCheckedChange={(on) => {
+                clearError("barberId", "time");
                 if (on) {
                   setNoPreference(true);
                 } else {
@@ -1384,6 +1433,7 @@ function EditAppointmentWizard({
                   onChange={(iso) => {
                     setDate(iso);
                     if (iso !== entry.date) setTime("");
+                    clearError("date", "time");
                   }}
                 />
               </Field>
@@ -1439,6 +1489,7 @@ function EditAppointmentWizard({
                             type="button"
                             onClick={() => {
                               setTime(t);
+                              clearError("time");
                               if (noPreference) setBarberId(assignBarberForTime(t));
                             }}
                             className={cn(
@@ -1558,7 +1609,10 @@ function EditAppointmentWizard({
                 <Textarea
                   id="editNotes"
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={(e) => {
+                    setNotes(e.target.value);
+                    clearError("notes");
+                  }}
                   maxLength={NOTES_MAX}
                   rows={2}
                   placeholder="Ex.: prefere a máquina no 2."
