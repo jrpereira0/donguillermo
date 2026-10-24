@@ -62,7 +62,9 @@ export type BarberDefaults = {
   instagram: string;
   facebook: string;
   tiktok: string;
-  commissionProducts: string;
+  /** O que vale de comissão para ele hoje (texto pronto, só leitura). */
+  commissionServicesLabel: string;
+  commissionProductsLabel: string;
   workHours: unknown;
   photoPath: string;
   photoUrl: string | null;
@@ -88,7 +90,8 @@ export const EMPTY_DEFAULTS: BarberDefaults = {
   instagram: "",
   facebook: "",
   tiktok: "",
-  commissionProducts: "",
+  commissionServicesLabel: "Tabela da rede",
+  commissionProductsLabel: "Percentual da rede",
   workHours: null,
   photoPath: "",
   photoUrl: null,
@@ -108,7 +111,6 @@ const TABS: TabDef<TabId>[] = [
 /** Em qual aba mora cada campo (para abrir a aba certa quando há erro). */
 function tabOf(field: string): TabId {
   if (field.startsWith("hours_")) return "horarios";
-  if (field.startsWith("commission")) return "comissoes";
   if (field === "email" || field === "password" || field === "confirm") return "acesso";
   return "dados";
 }
@@ -466,12 +468,23 @@ export function BarberForm({ slug, unitId, barberId, defaults, services, mode, e
           </FormSection>
         </div>
 
-        {/* ---------- Comissões ---------- */}
+        {/* ---------- Comissões (só leitura: quem define é o admin da rede) ---------- */}
         <div {...panel("comissoes")}>
-          <FormSection icon={Percent} title="Comissões" description="Percentual do profissional sobre os produtos que ele vende.">
-            <Field id="commissionProducts" label="Sobre produtos" error={fe.commissionProducts} className="max-w-xs">
-              <IconInput icon={<Percent className={ICON} />} id="commissionProducts" name="commissionProducts" inputMode="decimal" defaultValue={val("commissionProducts")} placeholder="Ex.: 10" autoComplete="off" aria-invalid={!!fe.commissionProducts} />
-            </Field>
+          <FormSection icon={Percent} title="Comissões" description="Quem define as comissões é o admin da rede, no painel dele.">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-border bg-black/20 px-4 py-3.5">
+                <p className="label-caps text-[0.62rem]">Sobre serviços</p>
+                <p className="mt-1.5 font-heading text-base font-semibold uppercase tracking-wide text-cream">
+                  {defaults.commissionServicesLabel}
+                </p>
+              </div>
+              <div className="rounded-xl border border-border bg-black/20 px-4 py-3.5">
+                <p className="label-caps text-[0.62rem]">Sobre produtos</p>
+                <p className="mt-1.5 font-heading text-base font-semibold uppercase tracking-wide text-cream">
+                  {defaults.commissionProductsLabel}
+                </p>
+              </div>
+            </div>
           </FormSection>
         </div>
 

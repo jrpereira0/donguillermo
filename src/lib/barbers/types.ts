@@ -27,8 +27,9 @@ export type BarberRow = {
   state: string | null;
   photo_path: string | null;
   social: unknown;
-  commission_services_pct: number;
-  commission_products_pct: number;
+  /** % próprio do profissional; `null` = segue a regra da rede (admin). */
+  commission_services_pct: number | null;
+  commission_products_pct: number | null;
   work_hours: unknown;
   is_active: boolean;
   created_at: string;

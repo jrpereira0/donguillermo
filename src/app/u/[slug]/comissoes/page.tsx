@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import Link from "next/link";
 import { ChevronRight, Percent, type LucideIcon } from "lucide-react";
+import { FormAlert } from "@/components/auth/form-alert";
 import { CommissionFilter } from "@/components/caixa/commission-filter";
 import { BarberAvatar } from "@/components/unit/barber-avatar";
+import { EmptyState } from "@/components/unit/empty-state";
 import { PageHeader } from "@/components/unit/page-header";
+import { StatusPill } from "@/components/ui/status-pill";
 import { requireUnitArea } from "@/lib/auth/guards";
-import { listCommissionSummary } from "@/lib/commissions/queries";
+import { listCommissionBrackets, listCommissionSummary } from "@/lib/commissions/queries";
 import { periodLabel, resolvePeriod } from "@/lib/commissions/period";
 import { formatBRL } from "@/lib/validation/service";
 import { cn } from "@/lib/utils";
@@ -58,8 +61,6 @@ function Kpi({ label, value, hint, accent }: { label: string; value: string; hin
   );
 }
 
-const fmtPct = (n: number) => `${String(n).replace(".", ",")}%`;
-
 export default async function ComissoesPage({
   params,
   searchParams,
@@ -71,7 +72,12 @@ export default async function ComissoesPage({
   const { slug } = await params;
   const period = resolvePeriod(await searchParams);
   const { unit } = await requireUnitArea(slug, "comissoes");
-  const rows = await listCommissionSummary(unit.id, period.fromISO, period.toISO);
+  const [rows, brackets] = await Promise.all([
+    listCommissionSummary(unit.id, period.fromISO, period.toISO),
+    listCommissionBrackets(),
+  ]);
+  // Sem tabela de faixas (e sem % próprio), a comissão de serviços fica R$ 0.
+  const semTabela = brackets.length === 0 && rows.some((r) => r.servicesCents > 0 && r.commissionServicesCents === 0);
 
   const producao = rows.reduce((a, r) => a + r.productionCents, 0);
   const comissoes = rows.reduce((a, r) => a + r.commissionCents, 0);
@@ -85,16 +91,22 @@ export default async function ComissoesPage({
       <PageHeader
         eyebrow="Financeiro"
         title="Comissões"
-        description={`Produção, comissões e gorjetas dos barbeiros pelas comandas fechadas de ${periodLabel(period.de, period.ate)}. A comissão de serviços segue a tabela progressiva da rede (o % é o da faixa do faturamento de serviços dele em cada mês); produtos têm o % do cadastro e a gorjeta é integral dele.`}
+        description={`Quanto cada barbeiro tem a receber, de ${periodLabel(period.de, period.ate)}.`}
       />
+
+      {semTabela ? (
+        <FormAlert tone="error" title="Tabela de faixas da rede está vazia">
+          Sem as faixas, a comissão de serviços fica R$ 0,00. O admin da rede cadastra a tabela em Admin → Comissões.
+        </FormAlert>
+      ) : null}
 
       <CommissionFilter basePath={`/u/${slug}/comissoes`} de={period.de} ate={period.ate} today={period.today} />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi label="Produção no período" value={formatBRL(producao)} hint="Serviços e produtos nas comandas fechadas" accent="gold" />
-        <Kpi label="Comissões a pagar" value={formatBRL(comissoes)} hint={`${comMovimento} ${comMovimento === 1 ? "barbeiro" : "barbeiros"} com movimento`} />
-        <Kpi label="Gorjetas" value={formatBRL(gorjetas)} hint="Integrais dos barbeiros, já incluídas no total a receber" />
-        <Kpi label="Atendimentos concluídos" value={String(atendimentos)} hint="Agendamentos concluídos na agenda no período" />
+        <Kpi label="Produção no período" value={formatBRL(producao)} hint="Serviços e produtos vendidos" accent="gold" />
+        <Kpi label="Comissões a pagar" value={formatBRL(comissoes)} hint={`${comMovimento} ${comMovimento === 1 ? "barbeiro" : "barbeiros"} com venda`} />
+        <Kpi label="Gorjetas" value={formatBRL(gorjetas)} hint="Deixadas pelos clientes" />
+        <Kpi label="Atendimentos concluídos" value={String(atendimentos)} hint="Na agenda" />
       </section>
 
       <Panel
@@ -107,9 +119,13 @@ export default async function ComissoesPage({
         }
       >
         {rows.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground">
-            Nenhum barbeiro cadastrado. Cadastre em Profissionais para começar.
-          </p>
+          <EmptyState
+            framed={false}
+            size="section"
+            icon={Percent}
+            title="Nenhum barbeiro cadastrado"
+            description="Cadastre em Profissionais para começar."
+          />
         ) : (
           <>
             <div className="hidden grid-cols-[minmax(0,1.5fr)_7rem_8.5rem_9rem_8rem_9rem_1.5rem] items-center gap-3 border-b border-border/60 px-5 py-2 lg:grid">
@@ -131,14 +147,10 @@ export default async function ComissoesPage({
                       <span className="min-w-0">
                         <span className="flex items-center gap-2 truncate text-sm font-medium text-cream">
                           {r.name}
-                          {!r.isActive ? (
-                            <span className="label-caps shrink-0 rounded-full border border-border bg-black/30 px-2 py-0.5 text-[0.55rem] text-muted-foreground">
-                              Inativo
-                            </span>
-                          ) : null}
+                          {!r.isActive ? <StatusPill tone="muted">Inativo</StatusPill> : null}
                         </span>
                         <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                          {r.jobTitle} · {fmtPct(r.pctServices)} serviços (tabela) · {fmtPct(r.pctProducts)} produtos
+                          {r.jobTitle}
                         </span>
                       </span>
                     </span>
@@ -158,12 +170,6 @@ export default async function ComissoesPage({
           </>
         )}
       </Panel>
-
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Toque em um barbeiro para ver as comandas, os itens mais vendidos e o cálculo completo dele no período. O
-        percentual de serviços vem da tabela progressiva da rede (faixa pelo faturamento de serviços de cada mês) e o
-        de produtos, do cadastro do profissional.
-      </p>
     </div>
   );
 }

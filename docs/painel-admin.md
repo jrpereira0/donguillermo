@@ -6,8 +6,8 @@
 
 | Rota | O que faz |
 |---|---|
-| `/admin` | Cartões das unidades (nome, endereço `/u/<slug>`, status Ativa/Inativa, recepção vinculada). Botões **Tabela de comissões** e **Nova unidade**; ativar/desativar |
-| `/admin/comissoes` | Tabela progressiva da comissão de serviços (faixas De/Até/%). Vale para todas as unidades. Produtos ficam de fora: cada profissional tem o percentual dele |
+| `/admin` | Cartões das unidades (nome, endereço `/u/<slug>`, status Ativa/Inativa, recepção vinculada). Botões **Comissões** e **Nova unidade**; ativar/desativar |
+| `/admin/comissoes` | Comissões da rede: tabela progressiva de serviços (faixas De/Até/%), % único de produtos e % próprio por profissional (campo vazio = segue a rede). Vale para todas as unidades |
 | `/admin/unidades/nova` | Cria a unidade **e** o acesso da recepção de uma vez |
 | `/admin/unidades/<slug>` | Gerencia a unidade: dados e horário de funcionamento, status, recepção (convidar, trocar senha, ativar/desativar vínculo) e link para a área da unidade |
 

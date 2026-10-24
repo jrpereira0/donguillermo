@@ -232,15 +232,6 @@ export const tiktokField = handleField(
   "TikTok inválido: use @usuario ou o link do perfil.",
 );
 
-/** "12", "12,5" ou "12.5" -> 12 / 12.5 (0 a 100, até 2 casas). Vazio = 0. */
-export const percentField = z
-  .string()
-  .trim()
-  .transform((v) => v.replace(",", "."))
-  .refine((v) => empty(v) || /^\d{1,3}(\.\d{1,2})?$/.test(v), "Informe um percentual válido (ex.: 40 ou 12,5).")
-  .transform((v) => (empty(v) ? 0 : Number(v)))
-  .refine((n) => n >= 0 && n <= 100, "O percentual deve ficar entre 0 e 100.");
-
 // ---------------- Schemas ----------------
 
 export const barberDetailsSchema = z.object({
@@ -261,8 +252,8 @@ export const barberDetailsSchema = z.object({
   instagram: instagramField,
   facebook: facebookField,
   tiktok: tiktokField,
-  // Serviços: sem % no cadastro — a comissão é a tabela progressiva da rede.
-  commissionProducts: percentField,
+  // Comissões fora do cadastro: quem define é o admin da rede (tabela de
+  // serviços, % de produtos e % próprio por profissional), no painel dele.
 });
 
 /** Criação: mesmos campos + e-mail do login (a senha é validada à parte). */

@@ -27,8 +27,6 @@ export type NewBarber = {
   };
   photoPath: string | null;
   social: Record<string, string>;
-  commissionServices: number;
-  commissionProducts: number;
   workHours: unknown;
 };
 
@@ -111,8 +109,7 @@ export async function provisionBarber(b: NewBarber): Promise<ProvisionResult & {
     state: b.address.state,
     photo_path: b.photoPath,
     social: b.social,
-    commission_services_pct: b.commissionServices,
-    commission_products_pct: b.commissionProducts,
+    // Comissão não nasce no cadastro: % próprio fica null (segue a rede do admin).
     work_hours: b.workHours,
   });
   if (barberError) {

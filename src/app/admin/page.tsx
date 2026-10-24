@@ -24,7 +24,7 @@ export default async function AdminHome() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/admin/comissoes" className={buttonVariants({ variant: "outline", size: "lg" })}>
-            <Percent /> Tabela de comissões
+            <Percent /> Comissões
           </Link>
           <Link href="/admin/unidades/nova" className={buttonVariants({ size: "lg" })}>
             <Plus /> Nova unidade

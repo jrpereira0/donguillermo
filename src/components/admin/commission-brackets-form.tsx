@@ -127,14 +127,13 @@ export function CommissionBracketsForm({ initial }: { initial: CommissionBracket
       </div>
 
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Cada faixa começa onde a anterior termina (+ R$ 0,01). "Até" vazio na última faixa = sem teto.
+        A faixa seguinte começa logo depois da anterior. Na última, deixe “Até” em branco.
         {preview ? (
           <>
             {" "}
-            Exemplo com esta tabela: quem vender <strong className="font-medium text-cream">R$ 15.000,00</strong> em
-            serviços no mês cai na faixa de{" "}
-            <strong className="font-medium text-cream">{String(preview.pct).replace(".", ",")}%</strong> e recebe{" "}
-            <strong className="font-medium text-cream">{formatBRL(preview.value)}</strong> de comissão de serviços.
+            Exemplo: R$ 15.000,00 em serviços no mês dá{" "}
+            <strong className="font-medium text-cream">{String(preview.pct).replace(".", ",")}%</strong>, ou seja{" "}
+            <strong className="font-medium text-cream">{formatBRL(preview.value)}</strong>.
           </>
         ) : null}
       </p>

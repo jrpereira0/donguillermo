@@ -32,7 +32,6 @@ const base = {
   instagram: "",
   facebook: "",
   tiktok: "",
-  commissionProducts: "",
 };
 
 describe("CNPJ", () => {
@@ -109,18 +108,16 @@ describe("barberDetailsSchema", () => {
       expect(r.data.cnpj).toBeNull();
       expect(r.data.birthDate).toBeNull();
       expect(r.data.instagram).toBeNull();
-      expect(r.data.commissionProducts).toBe(0);
     }
   });
 
-  it("normaliza CNPJ, telefone, redes e comissão com vírgula", () => {
+  it("normaliza CNPJ, telefone e redes sociais", () => {
     const r = barberDetailsSchema.safeParse({
       ...base,
       cnpj: "12.abc.345/01de-35",
       instagram: "https://instagram.com/joao.barber/",
       tiktok: "@joaobarber",
       facebook: "facebook.com/joao.barber",
-      commissionProducts: "40",
       phone: "(11) 99999-0000",
       birthDate: "1990-05-17",
     });
@@ -130,7 +127,6 @@ describe("barberDetailsSchema", () => {
       expect(r.data.instagram).toBe("joao.barber");
       expect(r.data.tiktok).toBe("joaobarber");
       expect(r.data.facebook).toBe("joao.barber");
-      expect(r.data.commissionProducts).toBe(40);
       expect(r.data.phone).toBe("11999990000");
     }
   });
@@ -177,10 +173,6 @@ describe("barberDetailsSchema", () => {
     ["birthDate", "17/05/1990"],
     ["instagram", "usuário com espaço"],
     ["instagram", "a".repeat(31)],
-    ["commissionProducts", "101"],
-    ["commissionProducts", "-5"],
-    ["commissionProducts", "abc"],
-    ["commissionProducts", "10,123"],
   ])("rejeita %s = %s", (field, value) => {
     const r = barberDetailsSchema.safeParse({ ...base, [field]: value });
     expect(r.success).toBe(false);

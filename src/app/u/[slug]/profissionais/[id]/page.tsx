@@ -12,6 +12,7 @@ import { requireUnitArea } from "@/lib/auth/guards";
 import { barberPhotoUrl } from "@/lib/barbers/photo";
 import { getBarber } from "@/lib/barbers/queries";
 import type { BarberRow } from "@/lib/barbers/types";
+import { getNetworkProductsPct } from "@/lib/commissions/queries";
 import { getBarberServiceMinutes, listAssignableServices } from "@/lib/services/queries";
 import { formatCep, maskCnpj, maskPhone } from "@/lib/validation/barber";
 import { toggleBarberActiveAction } from "../actions";
@@ -20,6 +21,18 @@ export const metadata: Metadata = { title: "Editar profissional" };
 export const instant = false;
 
 const num = (n: number) => String(n).replace(".", ",");
+const fmtPct = (n: number) => `${num(n)}%`;
+
+/** Rótulos de leitura da aba Comissões: o % próprio do profissional ou a regra da rede. */
+function commissionLabels(b: BarberRow, networkProductsPct: number): { services: string; products: string } {
+  return {
+    services: b.commission_services_pct !== null ? `${fmtPct(Number(b.commission_services_pct))} (próprio)` : "Tabela da rede",
+    products:
+      b.commission_products_pct !== null
+        ? `${fmtPct(Number(b.commission_products_pct))} (próprio)`
+        : `${fmtPct(networkProductsPct)} (rede)`,
+  };
+}
 
 /** Cadastros anteriores à separação nome/sobrenome: divide o nome completo no primeiro espaço. */
 function splitName(b: BarberRow): { first: string; last: string } {
@@ -28,10 +41,11 @@ function splitName(b: BarberRow): { first: string; last: string } {
   return { first, last: rest.join(" ") };
 }
 
-function toDefaults(b: BarberRow, serviceMinutes: Record<string, string>): BarberDefaults {
+function toDefaults(b: BarberRow, serviceMinutes: Record<string, string>, networkProductsPct: number): BarberDefaults {
   const social = (b.social && typeof b.social === "object" ? b.social : {}) as Record<string, unknown>;
   const s = (k: string) => (typeof social[k] === "string" ? (social[k] as string) : "");
   const { first, last } = splitName(b);
+  const labels = commissionLabels(b, networkProductsPct);
   return {
     firstName: first,
     lastName: last,
@@ -50,7 +64,8 @@ function toDefaults(b: BarberRow, serviceMinutes: Record<string, string>): Barbe
     instagram: s("instagram"),
     facebook: s("facebook"),
     tiktok: s("tiktok"),
-    commissionProducts: num(b.commission_products_pct),
+    commissionServicesLabel: labels.services,
+    commissionProductsLabel: labels.products,
     workHours: b.work_hours,
     photoPath: b.photo_path ?? "",
     photoUrl: barberPhotoUrl(b.photo_path, b.updated_at),
@@ -67,9 +82,10 @@ export default async function EditarProfissionalPage({
   const { unit } = await requireUnitArea(slug, "profissionais");
   const barber = await getBarber(unit.id, id);
   if (!barber) notFound();
-  const [services, serviceMinutes] = await Promise.all([
+  const [services, serviceMinutes, networkProductsPct] = await Promise.all([
     listAssignableServices(unit.id),
     getBarberServiceMinutes(unit.id, barber.id),
+    getNetworkProductsPct(),
   ]);
 
   const editAccess = (
@@ -136,7 +152,7 @@ export default async function EditarProfissionalPage({
         slug={slug}
         unitId={unit.id}
         barberId={barber.id}
-        defaults={toDefaults(barber, serviceMinutes)}
+        defaults={toDefaults(barber, serviceMinutes, networkProductsPct)}
         services={services}
         editAccess={editAccess}
       />

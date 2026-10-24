@@ -16,7 +16,7 @@
 - **Acesso**: e-mail e senha (cadastro). Na edição: trocar senha e ativar/desativar.
 - **Horários**: um dia por vez (faixa Seg a Dom). Quatro horários: entrada, saída para o almoço, volta e saída; o intervalo é o almoço (opcional). "Folga" por dia e atalhos para copiar para todos os dias ou de segunda a sexta.
 - **Serviços**: marca os serviços que o profissional faz e ajusta a duração de cada um (padrão do serviço ou outra). Detalhes em [servicos.md](servicos.md).
-- **Comissões**: só o percentual sobre **produtos**. Serviços seguem a tabela progressiva da rede (admin, `/admin/comissoes`), não um percentual deste cadastro.
+- **Comissões**: só leitura — mostra o que vale para ele (tabela/% da rede ou % próprio). Quem define é o admin da rede em `/admin/comissoes`, inclusive um percentual diferente por profissional.
 
 Tudo é salvo por um único botão. A aba com erro ganha um ponto vermelho e abre sozinha.
 

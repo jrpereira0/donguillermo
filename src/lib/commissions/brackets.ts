@@ -1,8 +1,11 @@
 /**
- * Tabela progressiva de comissão de SERVIÇOS (contrato salão-parceiro):
- * o percentual é o da faixa em que cai o faturamento de serviços do barbeiro
- * no mês, aplicado sobre TODO o faturamento de serviços daquele mês
- * (faixa única, não é por fatias). Produtos ficam fora: têm % próprio.
+ * Comissões definidas pelo admin da rede, com exceção por profissional:
+ * - SERVIÇOS: tabela progressiva (o percentual é o da faixa em que cai o
+ *   faturamento de serviços do barbeiro no mês, aplicado sobre TODO o
+ *   faturamento daquele mês — faixa única, não é por fatias).
+ * - PRODUTOS: percentual único da rede (`commission_settings`).
+ * - POR PROFISSIONAL: se ele tiver % próprio (serviços e/ou produtos),
+ *   vale o dele, fora da regra da rede; sem % próprio, segue a rede.
  *
  * A tabela vigente mora no banco (`commission_brackets`, editável pelo admin
  * da rede); os valores abaixo são a tabela de 2026 do contrato — servem de
@@ -59,6 +62,37 @@ export function servicesCommissionCents(
   fallbackPct: number,
 ): number {
   return Math.round((servicesCents * servicesPctFor(brackets, servicesCents, fallbackPct)) / 100);
+}
+
+const pctOfCents = (cents: number, pct: number) => Math.round((cents * pct) / 100);
+
+/**
+ * Comissão de serviços do mês de UM profissional: com % próprio, vale ele
+ * (fixo, fora da tabela); sem % próprio, vale a tabela progressiva da rede
+ * (sem tabela cadastrada, 0 — quem define é o admin).
+ */
+export function barberServicesCommissionCents(
+  brackets: CommissionBracket[],
+  servicesCents: number,
+  ownPct: number | null,
+): number {
+  if (ownPct !== null) return pctOfCents(servicesCents, ownPct);
+  return servicesCommissionCents(brackets, servicesCents, 0);
+}
+
+/** % de serviços vigente de um profissional para o faturamento do mês (exibição). */
+export function barberServicesPctFor(
+  brackets: CommissionBracket[],
+  servicesCents: number,
+  ownPct: number | null,
+): number {
+  if (ownPct !== null) return ownPct;
+  return servicesPctFor(brackets, servicesCents, 0);
+}
+
+/** % de produtos de um profissional: o % próprio quando definido; senão, o da rede. */
+export function barberProductsPctFor(ownPct: number | null, networkPct: number): number {
+  return ownPct ?? networkPct;
 }
 
 /**

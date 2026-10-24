@@ -32,7 +32,7 @@ export function CommissionFilter({
       value={{ from: de, to: ate }}
       today={today}
       presets={presets}
-      onApply={(v) => router.push(`${basePath}?de=${v.from}&ate=${v.to}`)}
+      onApply={(v) => router.push(`${basePath}?de=${v.from}&ate=${v.to}`, { scroll: false })}
     />
   );
 }

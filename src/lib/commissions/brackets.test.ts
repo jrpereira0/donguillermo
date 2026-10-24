@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_BRACKETS_2026, bracketFor, servicesCommissionCents, servicesPctFor } from "./brackets";
+import {
+  DEFAULT_BRACKETS_2026,
+  barberProductsPctFor,
+  barberServicesCommissionCents,
+  barberServicesPctFor,
+  bracketFor,
+  servicesCommissionCents,
+  servicesPctFor,
+} from "./brackets";
 
 describe("tabela progressiva de comissão (2026)", () => {
   it("começa em 25% para faturamento pequeno", () => {
@@ -30,5 +38,31 @@ describe("tabela progressiva de comissão (2026)", () => {
     expect(servicesPctFor([], 1_500_000, 40)).toBe(40);
     expect(servicesCommissionCents([], 10_000, 40)).toBe(4_000);
     expect(bracketFor([], 10_000)).toBeNull();
+  });
+});
+
+describe("comissão por profissional (admin define; % próprio vence a rede)", () => {
+  it("serviços: sem % próprio, vale a tabela progressiva da rede", () => {
+    expect(barberServicesCommissionCents(DEFAULT_BRACKETS_2026, 1_500_000, null)).toBe(435_000);
+    expect(barberServicesPctFor(DEFAULT_BRACKETS_2026, 1_500_000, null)).toBe(29);
+  });
+
+  it("serviços: com % próprio, vale ele sobre tudo (fora da tabela)", () => {
+    expect(barberServicesCommissionCents(DEFAULT_BRACKETS_2026, 1_500_000, 40)).toBe(600_000);
+    expect(barberServicesPctFor(DEFAULT_BRACKETS_2026, 1_500_000, 40)).toBe(40);
+  });
+
+  it("serviços: % próprio 0 é regra válida (não cai na tabela)", () => {
+    expect(barberServicesCommissionCents(DEFAULT_BRACKETS_2026, 1_500_000, 0)).toBe(0);
+  });
+
+  it("serviços: sem tabela e sem % próprio, comissão é 0", () => {
+    expect(barberServicesCommissionCents([], 1_500_000, null)).toBe(0);
+  });
+
+  it("produtos: % próprio vence o da rede; vazio segue o da rede", () => {
+    expect(barberProductsPctFor(15, 10)).toBe(15);
+    expect(barberProductsPctFor(null, 10)).toBe(10);
+    expect(barberProductsPctFor(0, 10)).toBe(0);
   });
 });
