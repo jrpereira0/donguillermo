@@ -35,6 +35,7 @@ import { formatBRL } from "@/lib/validation/service";
 import { cn } from "@/lib/utils";
 import { AppointmentDialog, type AppointmentTarget } from "./appointment-dialog";
 import { BlockDialog, type BlockTarget } from "./block-dialog";
+import { CashSummary, type CashSummaryData } from "./cash-summary";
 import { MiniCalendar } from "./mini-calendar";
 
 type StatusMenu = { entryId: string; x: number; y: number };
@@ -71,6 +72,8 @@ type Props = {
   popularIds: string[];
   from: number;
   to: number;
+  cashSummary: CashSummaryData;
+  unitName: string;
 };
 
 type Dialog = { type: "appointment"; target: AppointmentTarget } | { type: "block"; target: BlockTarget } | null;
@@ -131,6 +134,8 @@ export function AgendaBoard({
   popularIds,
   from,
   to,
+  cashSummary,
+  unitName,
 }: Props) {
   const router = useRouter();
   const calBtn = useRef<HTMLButtonElement>(null);
@@ -947,6 +952,7 @@ export function AgendaBoard({
           onReopened={(message) => reopenedComanda(comanda.ticket.appointmentId, message)}
         />
       ) : null}
+      <CashSummary slug={slug} unitName={unitName} cash={cashSummary} />
       {dialog?.type === "block" ? (
         <BlockDialog
           key={dialog.target.kind === "view" ? dialog.target.entry.id : "new"}
