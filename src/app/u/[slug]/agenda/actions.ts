@@ -415,6 +415,34 @@ export async function setAppointmentStatusAction(slug: string, id: string, to: s
     }
   }
 
+  // Sair de concluído devolve a comanda cobrada para aberta, no mesmo passo.
+  // Sem isso o atendimento volta e o pagamento continua no caixa.
+  if (current.status === "concluido" && (to === "em_atendimento" || to === "agendado" || to === "confirmado")) {
+    const { data: ticketId, error: reopenError } = await supabase.rpc("reopen_attendance", {
+      p_appointment: id,
+      p_status: to,
+    });
+    if (reopenError) {
+      console.error("[agenda] reopen attendance:", reopenError.code);
+      const code = reopenError.code;
+      const message =
+        code === "P0001" || code === "P0002" || code === "22023"
+          ? reopenError.message || GENERIC
+          : GENERIC;
+      return fail(message);
+    }
+    revalidatePath(`/u/${unit.slug}/agenda`);
+    revalidatePath(`/u/${unit.slug}/caixa`);
+    revalidatePath(`/u/${unit.slug}/comissoes`);
+    if (typeof ticketId === "string") revalidatePath(`/u/${unit.slug}/caixa/comanda/${ticketId}`);
+    return {
+      status: "success",
+      message: ticketId
+        ? "Atendimento reaberto. A comanda voltou a ficar aberta para cobrar de novo."
+        : "Situação atualizada.",
+    };
+  }
+
   const { data, error } = await supabase
     .from("appointments")
     .update({ status: to })
@@ -433,6 +461,7 @@ export async function setAppointmentStatusAction(slug: string, id: string, to: s
 
   revalidatePath(`/u/${unit.slug}/agenda`);
   revalidatePath(`/u/${unit.slug}/caixa`);
+  revalidatePath(`/u/${unit.slug}/comissoes`);
   const message =
     to === "cancelado"
       ? "Agendamento cancelado. Horário liberado."
